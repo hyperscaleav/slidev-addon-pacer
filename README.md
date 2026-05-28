@@ -91,6 +91,29 @@ The addon then groups slides into segments at each boundary. Banking, ETA, and r
 
 If no `pacerBoundary` markers exist, the whole deck is treated as a single segment (the default).
 
+### Breaks
+
+Breaks are wall-clock-anchored, not content-anchored: you tell the pacer when your breaks are (10:30 AM, 12:00 PM, 2:30 PM, ...) and how long they last, and the pacer shows you where they'll fall in your content given your current pacing. There are no break slides to maintain in the deck.
+
+Configure breaks per segment in the settings dialog (the dialog adds a "Breaks" section scoped to whichever segment contains the slide you're on). Each break has a start time and a duration.
+
+While a break is upcoming:
+- A break chip appears in the presenter nav bar showing the time until the next break.
+- The chip's tooltip names the slide the break is projected to land on at current pacing.
+- Banking and ETA both account for the break (target completion factors in upcoming break time).
+
+When a break is due:
+- The chip turns red and pulses.
+- Click it to raise the break overlay.
+
+While a break is active:
+- A fullscreen overlay shows on both the presenter and audience screens, with a "Back at H:MM" message and a live countdown.
+- The slide elapsed-time counter pauses (so the slide you were on doesn't get charged for break minutes).
+- When the countdown hits zero, it goes red and counts up (overrun).
+- The presenter clicks the "Resume presentation" button (or presses Escape) to dismiss.
+
+If a break runs over, the overrun shows up in the banking math the moment it's dismissed.
+
 ## Configs
 
 ```yaml

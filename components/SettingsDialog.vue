@@ -34,6 +34,22 @@
                 </div>
             </div>
 
+            <!-- Breaks Section -->
+            <div class="time-inputs">
+                <h4>Breaks{{ hasMultipleSegments ? ` for ${currentSegment.label}` : '' }}</h4>
+                <p class="help-text">Wall-clock-anchored breaks. When a break is due, the pacer chip turns red; click it to raise the break overlay.</p>
+                <div v-if="breakEdits.length === 0" class="no-breaks">No breaks scheduled.</div>
+                <div v-for="(brk, idx) in breakEdits" :key="brk.id" class="break-row">
+                    <input type="datetime-local" v-model="brk.startInput" class="break-start" />
+                    <input type="number" min="1" step="1" v-model.number="brk.durationMinutes" class="break-duration" />
+                    <span class="break-unit">min</span>
+                    <span v-if="brk.dismissedAt" class="break-state past">past</span>
+                    <span v-else-if="brk.raisedAt" class="break-state active">active</span>
+                    <button @click="removeBreak(idx)" class="break-remove" title="Delete this break">&times;</button>
+                </div>
+                <button @click="addBreak" class="small-button add-break-button">+ Add break</button>
+            </div>
+
             <!-- Slide Time Management -->
             <div class="time-inputs">
                 <h4>Slide Time Management</h4>
@@ -84,6 +100,9 @@ import {
     writeSetting,
     writeSegmentValue,
     readSegmentValue,
+    readSegmentBreaks,
+    writeSegmentBreaks,
+    newBreakId,
     computeSegments,
     findSegmentForPage,
 } from '../utils/constants';
@@ -104,6 +123,10 @@ export default {
             useTargetCompletion: false,
             targetCompletionInput: '',
             presentationStartInput: '',
+            // Editable copy of the current segment's break list. Each entry
+            // carries a `startInput` string for the datetime-local input,
+            // alongside the persisted fields.
+            breakEdits: [],
             // Confirmation dialog state
             showConfirmDialog: false,
             confirmationTitle: '',
@@ -156,8 +179,35 @@ export default {
                 writeSegmentValue(PRESENTATION_STARTS, segIdx, new Date(this.presentationStartInput).getTime());
             }
 
+            const persistedBreaks = this.breakEdits
+                .filter(b => b.startInput && b.durationMinutes > 0)
+                .map(b => {
+                    const out = {
+                        id: b.id,
+                        startTime: new Date(b.startInput).getTime(),
+                        durationMinutes: Number(b.durationMinutes),
+                    };
+                    if (b.raisedAt) out.raisedAt = b.raisedAt;
+                    if (b.dismissedAt) out.dismissedAt = b.dismissedAt;
+                    return out;
+                });
+            writeSegmentBreaks(segIdx, persistedBreaks);
+
             this.$emit('settings-updated');
             this.closeDialog();
+        },
+
+        addBreak() {
+            const defaultStart = Date.now() + 60 * 60 * 1000;
+            this.breakEdits.push({
+                id: newBreakId(),
+                startInput: this.formatDateForLocalInput(new Date(defaultStart)),
+                durationMinutes: 15,
+            });
+        },
+
+        removeBreak(index) {
+            this.breakEdits.splice(index, 1);
         },
 
         resetSettings() {
@@ -399,6 +449,11 @@ export default {
             const targetDate = new Date();
             targetDate.setTime(storedTarget ? parseInt(storedTarget) : Date.now() + (60 * 60 * 1000));
             this.targetCompletionInput = this.formatDateForLocalInput(targetDate);
+
+            this.breakEdits = readSegmentBreaks(segIdx).map(b => ({
+                ...b,
+                startInput: this.formatDateForLocalInput(new Date(b.startTime)),
+            }));
         }
     },
     watch: {
@@ -424,6 +479,109 @@ export default {
 
 .dark-mode .segment-scope-note {
     color: #9ca3af;
+}
+
+.no-breaks {
+    font-size: 0.85rem;
+    color: #9ca3af;
+    font-style: italic;
+    margin: 4px 0;
+}
+
+.break-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 6px 0;
+}
+
+.break-start {
+    flex: 1;
+    min-width: 0;
+}
+
+.break-duration {
+    width: 60px;
+}
+
+.break-unit {
+    font-size: 0.8rem;
+    color: #6b7280;
+}
+
+.dark-mode .break-unit {
+    color: #9ca3af;
+}
+
+.break-state {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: #e5e7eb;
+    color: #374151;
+}
+
+.break-state.active {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.break-state.past {
+    background: #d1d5db;
+    color: #6b7280;
+}
+
+.dark-mode .break-state {
+    background: #374151;
+    color: #d1d5db;
+}
+
+.dark-mode .break-state.active {
+    background: #78350f;
+    color: #fef3c7;
+}
+
+.dark-mode .break-state.past {
+    background: #1f2937;
+    color: #6b7280;
+}
+
+.break-remove {
+    background: transparent;
+    border: 1px solid #d1d5db;
+    color: #6b7280;
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.break-remove:hover {
+    background: #fee2e2;
+    border-color: #ef4444;
+    color: #b91c1c;
+}
+
+.dark-mode .break-remove {
+    border-color: #4b5563;
+    color: #9ca3af;
+}
+
+.dark-mode .break-remove:hover {
+    background: #7f1d1d;
+    border-color: #b91c1c;
+    color: #fecaca;
+}
+
+.add-break-button {
+    margin-top: 8px;
 }
 
 .start-time-section {

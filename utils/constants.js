@@ -10,11 +10,17 @@ export const STORAGE_KEYS = {
   PRESENTATION_STARTS: `${STORAGE_PREFIX}presentation-starts`,
   TARGET_COMPLETIONS: `${STORAGE_PREFIX}target-completions`,
   SLIDE_TIMES: `${STORAGE_PREFIX}slide-times`,
+  // Per-segment break lists, stored as JSON:
+  //   { "<segIdx>": [{ id, startTime: <ms>, durationMinutes: <num> }, ...] }
+  BREAKS: `${STORAGE_PREFIX}breaks`,
 }
 
 export const EVENTS = {
   OPEN_SETTINGS: 'pacer-open-settings',
   SETTINGS_UPDATED: 'pacer-settings-updated',
+  // Fired when a presenter raises or dismisses a break overlay.
+  // detail: { activeBreak: <break-object> | null }
+  BREAK_STATE_CHANGED: 'pacer-break-state-changed',
 }
 
 // Browser `storage` events only fire in *other* tabs, so settings changes
@@ -111,4 +117,50 @@ export function computeSegments(slides) {
 export function findSegmentForPage(segments, currentPage) {
   const pageIdx = currentPage - 1
   return segments.find(s => pageIdx >= s.start && pageIdx <= s.end) ?? segments[0]
+}
+
+// Read the break list for a segment. Returns an array (possibly empty),
+// sorted by startTime ascending.
+export function readSegmentBreaks(segmentIndex) {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.BREAKS)
+    if (!raw) return []
+    const map = JSON.parse(raw)
+    const arr = map[String(segmentIndex)] ?? []
+    return [...arr].sort((a, b) => a.startTime - b.startTime)
+  } catch {
+    return []
+  }
+}
+
+// Replace the break list for a segment, then fire SETTINGS_UPDATED.
+// Pass an empty array (or null) to clear the segment's entry.
+export function writeSegmentBreaks(segmentIndex, breaks) {
+  let map = {}
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.BREAKS)
+    if (raw) map = JSON.parse(raw)
+  } catch {
+    map = {}
+  }
+  const segKey = String(segmentIndex)
+  if (!breaks || breaks.length === 0) {
+    delete map[segKey]
+  } else {
+    map[segKey] = breaks
+  }
+  if (Object.keys(map).length === 0) {
+    localStorage.removeItem(STORAGE_KEYS.BREAKS)
+  } else {
+    localStorage.setItem(STORAGE_KEYS.BREAKS, JSON.stringify(map))
+  }
+  window.dispatchEvent(new CustomEvent(EVENTS.SETTINGS_UPDATED, {
+    detail: { key: STORAGE_KEYS.BREAKS, segmentIndex },
+  }))
+}
+
+// Build a stable id for a new break entry.
+export function newBreakId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
+  return `break-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
