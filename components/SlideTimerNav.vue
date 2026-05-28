@@ -8,6 +8,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import { EVENTS } from '../utils/constants'
 
 // Props from TimerBar
 const props = defineProps({
@@ -71,7 +72,7 @@ const tooltipText = computed(() => {
 
 // Function to open settings dialog
 const openSettingsDialog = () => {
-    window.dispatchEvent(new CustomEvent('rabbit-open-settings'))
+    window.dispatchEvent(new CustomEvent(EVENTS.OPEN_SETTINGS))
 }
 </script>
 

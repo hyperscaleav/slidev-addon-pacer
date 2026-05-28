@@ -1,7 +1,7 @@
 {
-  "name": "slidev-addon-rabbit",
-  "version": "0.4.0",
-  "description": "Slidev addon for presentation time management inspired Rabbit",
+  "name": "slidev-addon-pacer",
+  "version": "0.5.0",
+  "description": "Slidev addon for presentation time management: dual-lane race, per-slide time budgets, time banking, and target completion tracking.",
   "engines": {
     "node": ">=18.0.0",
     "npm": ">=9.5.0"
@@ -18,24 +18,27 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kaakaa/slidev-addon-rabbit.git"
+    "url": "git+https://github.com/fullmetal-fred/slidev-addon-pacer.git"
   },
   "keywords": [
     "slidev-addon",
-    "slidev"
+    "slidev",
+    "presentation",
+    "timer",
+    "pacing"
   ],
-  "author": "kaakaa",
+  "author": "fullmetal-fred",
   "license": "MIT",
   "devDependencies": {
     "@slidev/cli": "^0.49.29",
-    "@slidev/theme-default": "latest"
+    "@slidev/theme-default": "^0.25.0"
   },
   "dependencies": {
     "@iconify-json/emojione-monotone": "^1.1.4",
     "@iconify-json/mdi": "^1.2.3"
   },
   "bugs": {
-    "url": "https://github.com/kaakaa/slidev-addon-rabbit/issues"
+    "url": "https://github.com/fullmetal-fred/slidev-addon-pacer/issues"
   },
-  "homepage": "https://github.com/kaakaa/slidev-addon-rabbit#readme"
+  "homepage": "https://github.com/fullmetal-fred/slidev-addon-pacer#readme"
 }

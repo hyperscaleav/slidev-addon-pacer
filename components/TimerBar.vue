@@ -31,13 +31,9 @@ import SlideTimerNav from './SlideTimerNav.vue'
 import BankedTimeNav from './BankedTimeNav.vue'
 import EstimatedEndTimeNav from './EstimatedEndTimeNav.vue'
 import TargetCompletionTime from './TargetCompletionTime.vue'
+import { CONFIG_KEY, STORAGE_KEYS, EVENTS } from '../utils/constants'
 
-// Storage keys
-const STORAGE_KEY_PREFIX = 'slidev-turtle-'
-const START_TIME_KEY = `${STORAGE_KEY_PREFIX}start-time`
-const SLIDE_TIMES_KEY = 'slidev-turtle-slide-times'
-const PRESENTATION_START_KEY = 'slidev-turtle-presentation-start-time'
-const TARGET_COMPLETION_KEY = `${STORAGE_KEY_PREFIX}target-completion`
+const { PRESENTATION_START, TARGET_COMPLETION, SLIDE_TIMES } = STORAGE_KEYS
 
 // Reactive data
 const currentTime = ref(Date.now())
@@ -48,12 +44,12 @@ const slideStartTime = ref(Date.now())
 
 // Load data from localStorage
 const loadStoredData = () => {
-    const startTime = localStorage.getItem(PRESENTATION_START_KEY)
+    const startTime = localStorage.getItem(PRESENTATION_START)
     if (startTime) {
         presentationStartTime.value = parseInt(startTime)
     }
 
-    const targetTime = localStorage.getItem(TARGET_COMPLETION_KEY)
+    const targetTime = localStorage.getItem(TARGET_COMPLETION)
     if (targetTime) {
         targetCompletionTime.value = parseInt(targetTime)
     }
@@ -68,7 +64,7 @@ const presentationHasStarted = computed(() => {
 // Get slide times from configuration
 const slideTimes = computed(() => {
     const slides = $slidev.nav.slides
-    const defaultSlideTime = $slidev.configs?.rabbit?.defaultSlideTime || 2
+    const defaultSlideTime = $slidev.configs?.[CONFIG_KEY]?.defaultSlideTime || 2
 
     return slides.map(slide => {
         const slideTime = slide.meta.slide.frontmatter?.slideTime
@@ -112,7 +108,7 @@ const slideElapsedTimes = ref({})
 // Function to load slide elapsed times
 const loadSlideElapsedTimes = () => {
     try {
-        const saved = localStorage.getItem(SLIDE_TIMES_KEY)
+        const saved = localStorage.getItem(SLIDE_TIMES)
         slideElapsedTimes.value = saved ? JSON.parse(saved) : {}
     } catch (e) {
         slideElapsedTimes.value = {}
@@ -140,7 +136,7 @@ const saveCurrentSlideTime = () => {
 
     // Store the elapsed time for this slide
     slideElapsedTimes.value[slideNum] = totalElapsedTime
-    localStorage.setItem(SLIDE_TIMES_KEY, JSON.stringify(slideElapsedTimes.value))
+    localStorage.setItem(SLIDE_TIMES, JSON.stringify(slideElapsedTimes.value))
 }
 
 // Banked time calculation: net time advantage/deficit relative to target
@@ -292,14 +288,14 @@ const timeDeltaInfo = computed(() => {
     }
 })
 
-// Listen for storage changes
-const handleStorageChange = (event) => {
-    if (event.key === PRESENTATION_START_KEY) {
-        presentationStartTime.value = event.newValue ? parseInt(event.newValue) : null
-    } else if (event.key === TARGET_COMPLETION_KEY) {
-        targetCompletionTime.value = event.newValue ? parseInt(event.newValue) : null
-    } else if (event.key === SLIDE_TIMES_KEY) {
-        // Reload slide elapsed times when they change
+// Listen for in-window settings changes from SettingsDialog
+const handleSettingsUpdated = (event) => {
+    const { key, value } = event.detail
+    if (key === PRESENTATION_START) {
+        presentationStartTime.value = value ? parseInt(value) : null
+    } else if (key === TARGET_COMPLETION) {
+        targetCompletionTime.value = value ? parseInt(value) : null
+    } else if (key === SLIDE_TIMES) {
         loadSlideElapsedTimes()
     }
 }
@@ -321,7 +317,7 @@ watch(() => $slidev.nav.currentPage, (newPage, oldPage) => {
 
         // Store the final time for this slide
         slideElapsedTimes.value[slideNum] = totalElapsedTime
-        localStorage.setItem(SLIDE_TIMES_KEY, JSON.stringify(slideElapsedTimes.value))
+        localStorage.setItem(SLIDE_TIMES, JSON.stringify(slideElapsedTimes.value))
     }
 
     // Start timing for the new slide AFTER saving the old one
@@ -333,7 +329,7 @@ onMounted(() => {
     loadStoredData()
     loadSlideElapsedTimes() // Load slide elapsed times for banking calculations
     startSlideTimer() // Initialize slide timer
-    window.addEventListener('storage', handleStorageChange)
+    window.addEventListener(EVENTS.SETTINGS_UPDATED, handleSettingsUpdated)
 
     // Update current time every second
     intervalId.value = setInterval(() => {
@@ -343,7 +339,7 @@ onMounted(() => {
 
 onUnmounted(() => {
     saveCurrentSlideTime() // Save current slide time before unmounting
-    window.removeEventListener('storage', handleStorageChange)
+    window.removeEventListener(EVENTS.SETTINGS_UPDATED, handleSettingsUpdated)
     if (intervalId.value) {
         clearInterval(intervalId.value)
     }

@@ -11,9 +11,9 @@
 
 <script setup>
 import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { CONFIG_KEY, STORAGE_KEYS, EVENTS } from '../utils/constants'
 
-// Storage keys
-const TARGET_COMPLETION_KEY = 'slidev-turtle-target-completion'
+const { TARGET_COMPLETION } = STORAGE_KEYS
 
 // Props from TimerBar
 const props = defineProps({
@@ -52,14 +52,14 @@ const targetCompletionTime = ref(props.targetCompletionTime)
 
 // Watch for changes to targetCompletionTime prop
 const loadTargetCompletionTime = () => {
-  const stored = localStorage.getItem(TARGET_COMPLETION_KEY)
+  const stored = localStorage.getItem(TARGET_COMPLETION)
   if (stored) {
     targetCompletionTime.value = parseInt(stored)
   }
 }
 
 // Get Slidev configuration
-const use12HourFormat = $slidev.configs?.rabbit?.use12HourFormat ?? false
+const use12HourFormat = $slidev.configs?.[CONFIG_KEY]?.use12HourFormat ?? false
 
 // Calculate estimated finish time using the passed estimatedEndTime prop
 const estimatedFinishTime = computed(() => {
@@ -134,24 +134,24 @@ const tooltipText = computed(() => {
 
 // Function to open settings dialog
 const openSettingsDialog = () => {
-  window.dispatchEvent(new CustomEvent('rabbit-open-settings'))
+  window.dispatchEvent(new CustomEvent(EVENTS.OPEN_SETTINGS))
 }
 
-// Listen for storage changes to sync start time across windows
-const handleStorageChange = (event) => {
-  if (event.key === TARGET_COMPLETION_KEY) {
-    targetCompletionTime.value = event.newValue ? parseInt(event.newValue) : null
+// Listen for in-window settings changes from SettingsDialog
+const handleSettingsUpdated = (event) => {
+  const { key, value } = event.detail
+  if (key === TARGET_COMPLETION) {
+    targetCompletionTime.value = value ? parseInt(value) : null
   }
 }
 
-// Update current time every second
 onMounted(() => {
   loadTargetCompletionTime()
-  window.addEventListener('storage', handleStorageChange)
+  window.addEventListener(EVENTS.SETTINGS_UPDATED, handleSettingsUpdated)
 })
 
 onUnmounted(() => {
-  window.removeEventListener('storage', handleStorageChange)
+  window.removeEventListener(EVENTS.SETTINGS_UPDATED, handleSettingsUpdated)
 })
 </script>
 

@@ -22,7 +22,7 @@ transition: slide-left
 mdc: true
 addons:
   - ./
-rabbit:
+pacer:
   useSlideTimes: true # Enable time-based slide tracking
   defaultSlideTime: 2 # Default time for slides without `slideTime` attribute, defaults to 2 minutes
   showSlideMarkers: true # Show tick marks along the track divider for each slide

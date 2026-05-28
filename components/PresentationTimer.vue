@@ -8,9 +8,9 @@
 
 <script setup>
 import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
+import { CONFIG_KEY, STORAGE_KEYS, EVENTS, writeSetting } from '../utils/constants'
 
-// Storage keys
-const PRESENTATION_START_KEY = 'slidev-turtle-presentation-start-time'
+const { PRESENTATION_START } = STORAGE_KEYS
 
 // Reactive data
 const currentTime = ref(Date.now())
@@ -19,19 +19,19 @@ const presentationStartTime = ref(null)
 
 // Get presentation start time from storage or settings
 const loadPresentationStartTime = () => {
-    const stored = localStorage.getItem(PRESENTATION_START_KEY)
+    const stored = localStorage.getItem(PRESENTATION_START)
     if (stored) {
         presentationStartTime.value = parseInt(stored)
     } else {
         // Check if there's a configured start time in settings
-        const startTimeStr = $slidev.configs?.rabbit?.presentationStartTime
+        const startTimeStr = $slidev.configs?.[CONFIG_KEY]?.presentationStartTime
         if (startTimeStr) {
             // Parse time string like "14:30" and convert to timestamp for today
             const [hours, minutes] = startTimeStr.split(':').map(Number)
             const today = new Date()
             today.setHours(hours, minutes, 0, 0)
             presentationStartTime.value = today.getTime()
-            localStorage.setItem(PRESENTATION_START_KEY, presentationStartTime.value.toString())
+            writeSetting(PRESENTATION_START, presentationStartTime.value)
         }
     }
 }
@@ -115,7 +115,7 @@ const tooltipText = computed(() => {
 
 // Toggle/set start time - now opens settings dialog
 const toggleStartTime = () => {
-    window.dispatchEvent(new CustomEvent('rabbit-open-settings'))
+    window.dispatchEvent(new CustomEvent(EVENTS.OPEN_SETTINGS))
 }
 
 // Update current time every second
@@ -134,26 +134,23 @@ const stopTimer = () => {
     }
 }
 
-// Listen for storage changes to sync start time across windows
-const handleStorageChange = (event) => {
-    if (event.key === PRESENTATION_START_KEY) {
-        if (event.newValue) {
-            presentationStartTime.value = parseInt(event.newValue)
-        } else {
-            presentationStartTime.value = null
-        }
+// Listen for in-window settings changes from SettingsDialog
+const handleSettingsUpdated = (event) => {
+    const { key, value } = event.detail
+    if (key === PRESENTATION_START) {
+        presentationStartTime.value = value ? parseInt(value) : null
     }
 }
 
 onMounted(() => {
     loadPresentationStartTime()
     startTimer()
-    window.addEventListener('storage', handleStorageChange)
+    window.addEventListener(EVENTS.SETTINGS_UPDATED, handleSettingsUpdated)
 })
 
 onUnmounted(() => {
     stopTimer()
-    window.removeEventListener('storage', handleStorageChange)
+    window.removeEventListener(EVENTS.SETTINGS_UPDATED, handleSettingsUpdated)
 })
 </script>
 

@@ -9,20 +9,19 @@
 
 <script setup>
 import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { CONFIG_KEY, STORAGE_KEYS, EVENTS } from '../utils/constants'
 
-// Storage keys
-const STORAGE_KEY_PREFIX = 'slidev-turtle-'
-const TARGET_COMPLETION_KEY = `${STORAGE_KEY_PREFIX}target-completion`
+const { TARGET_COMPLETION } = STORAGE_KEYS
 
 // Reactive data
 const targetCompletionTime = ref(null)
 
 // Get Slidev configuration
-const use12HourFormat = $slidev.configs?.rabbit?.use12HourFormat ?? false
+const use12HourFormat = $slidev.configs?.[CONFIG_KEY]?.use12HourFormat ?? false
 
 // Load target completion time
 const loadTargetCompletionTime = () => {
-    const stored = localStorage.getItem(TARGET_COMPLETION_KEY)
+    const stored = localStorage.getItem(TARGET_COMPLETION)
     if (stored) {
         targetCompletionTime.value = parseInt(stored)
     }
@@ -73,24 +72,24 @@ const tooltipText = computed(() => {
 
 // Function to open settings dialog
 const openSettingsDialog = () => {
-    window.dispatchEvent(new CustomEvent('rabbit-open-settings'))
+    window.dispatchEvent(new CustomEvent(EVENTS.OPEN_SETTINGS))
 }
 
-// Listen for storage changes to sync target time across windows
-const handleStorageChange = (event) => {
-    if (event.key === TARGET_COMPLETION_KEY) {
-        targetCompletionTime.value = event.newValue ? parseInt(event.newValue) : null
+// Listen for in-window settings changes from SettingsDialog
+const handleSettingsUpdated = (event) => {
+    const { key, value } = event.detail
+    if (key === TARGET_COMPLETION) {
+        targetCompletionTime.value = value ? parseInt(value) : null
     }
 }
 
-// Initialize component
 onMounted(() => {
     loadTargetCompletionTime()
-    window.addEventListener('storage', handleStorageChange)
+    window.addEventListener(EVENTS.SETTINGS_UPDATED, handleSettingsUpdated)
 })
 
 onUnmounted(() => {
-    window.removeEventListener('storage', handleStorageChange)
+    window.removeEventListener(EVENTS.SETTINGS_UPDATED, handleSettingsUpdated)
 })
 </script>
 

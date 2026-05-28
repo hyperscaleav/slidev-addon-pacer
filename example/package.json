@@ -3,14 +3,14 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "build": "slidev build --base /slidev-addon-rabbit/",
+    "build": "slidev build --base /slidev-addon-pacer/",
     "dev": "slidev --open",
     "export": "slidev export"
   },
   "dependencies": {
     "@iconify-json/fluent": "^1.2.23",
     "@slidev/theme-seriph": "latest",
-    "slidev-addon-rabbit": "file:..",
+    "slidev-addon-pacer": "file:..",
     "vue": "^3.4.38"
   }
 }

@@ -75,10 +75,9 @@
 </template>
 
 <script>
-const STORAGE_KEY_PREFIX = 'slidev-turtle-';
-const TARGET_COMPLETION_KEY = `${STORAGE_KEY_PREFIX}target-completion`;
-const PRESENTATION_START_KEY = `${STORAGE_KEY_PREFIX}presentation-start-time`;
-const SLIDE_TIMES_KEY = 'slidev-turtle-slide-times';
+import { CONFIG_KEY, STORAGE_KEYS, writeSetting } from '../utils/constants';
+
+const { TARGET_COMPLETION, PRESENTATION_START, SLIDE_TIMES } = STORAGE_KEYS;
 
 export default {
     name: 'SettingsDialog',
@@ -90,8 +89,8 @@ export default {
     },
     emits: ['close', 'settings-updated'],
     data() {
-        const storedTargetCompletion = localStorage.getItem(TARGET_COMPLETION_KEY);
-        const storedPresentationStart = localStorage.getItem(PRESENTATION_START_KEY);
+        const storedTargetCompletion = localStorage.getItem(TARGET_COMPLETION);
+        const storedPresentationStart = localStorage.getItem(PRESENTATION_START);
 
         return {
             useTargetCompletion: !!storedTargetCompletion,
@@ -133,61 +132,38 @@ export default {
         saveSettings() {
             // Save target completion settings
             if (this.useTargetCompletion) {
-                const targetCompletion = new Date(this.targetCompletionInput).getTime();
-                localStorage.setItem(TARGET_COMPLETION_KEY, targetCompletion.toString());
+                writeSetting(TARGET_COMPLETION, new Date(this.targetCompletionInput).getTime());
             } else {
-                // Remove target completion settings
-                localStorage.removeItem(TARGET_COMPLETION_KEY);
+                writeSetting(TARGET_COMPLETION, null);
             }
 
             // Save presentation start time
             if (this.presentationStartInput) {
-                const presentationStart = new Date(this.presentationStartInput).getTime();
-                localStorage.setItem(PRESENTATION_START_KEY, presentationStart.toString());
+                writeSetting(PRESENTATION_START, new Date(this.presentationStartInput).getTime());
             }
 
-            // Signal to parent that settings have changed
             this.$emit('settings-updated');
             this.closeDialog();
-
-            // Force page reload to ensure all components pick up the new settings
-            window.location.reload();
         },
 
         resetSettings() {
-            // Reset everything to defaults
-            localStorage.removeItem(TARGET_COMPLETION_KEY);
-            localStorage.removeItem(PRESENTATION_START_KEY);
+            writeSetting(TARGET_COMPLETION, null);
+            writeSetting(PRESENTATION_START, null);
 
             this.useTargetCompletion = false;
             this.presentationStartInput = '';
             this.closeDialog();
-
-            // Force page reload
-            window.location.reload();
         },
 
         setStartTimeNow() {
             const now = Date.now();
-            localStorage.setItem(PRESENTATION_START_KEY, now.toString());
+            writeSetting(PRESENTATION_START, now);
             this.presentationStartInput = this.formatDateForLocalInput(new Date(now));
-
-            // Notify other components
-            window.dispatchEvent(new StorageEvent('storage', {
-                key: PRESENTATION_START_KEY,
-                newValue: now.toString()
-            }));
         },
 
         clearStartTime() {
-            localStorage.removeItem(PRESENTATION_START_KEY);
+            writeSetting(PRESENTATION_START, null);
             this.presentationStartInput = '';
-
-            // Notify other components
-            window.dispatchEvent(new StorageEvent('storage', {
-                key: PRESENTATION_START_KEY,
-                newValue: null
-            }));
         },
 
         clearSlideTimes() {
@@ -196,21 +172,14 @@ export default {
                 'Are you sure you want to clear all slide timing data? This action cannot be undone.',
                 'Clear All',
                 () => {
-                    localStorage.removeItem(SLIDE_TIMES_KEY);
-
-                    // Notify other components
-                    window.dispatchEvent(new StorageEvent('storage', {
-                        key: SLIDE_TIMES_KEY,
-                        newValue: null
-                    }));
-
+                    writeSetting(SLIDE_TIMES, null);
                     this.showNotificationDialog('Success', 'All slide timing data has been cleared.');
                 }
             );
         },
 
         exportSlideTimes() {
-            const savedTimes = localStorage.getItem(SLIDE_TIMES_KEY);
+            const savedTimes = localStorage.getItem(SLIDE_TIMES);
             if (!savedTimes) {
                 this.showNotificationDialog('No Data', 'No slide timing data available to export.');
                 return;
@@ -228,7 +197,7 @@ export default {
                 }
                 
                 const slides = slidevNav.slides;
-                const defaultSlideTime = slidevConfigs?.rabbit?.defaultSlideTime || 2;
+                const defaultSlideTime = slidevConfigs?.[CONFIG_KEY]?.defaultSlideTime || 2;
 
                 // Format current date and time for filename
                 const now = new Date();
@@ -241,8 +210,8 @@ export default {
                         exportDate: now.toISOString(),
                         totalSlides: slides.length,
                         slidesWithRecordedTimes: Object.keys(slideTimes).length,
-                        presentationStartTime: localStorage.getItem(PRESENTATION_START_KEY) || null,
-                        targetCompletionTime: localStorage.getItem(TARGET_COMPLETION_KEY) || null
+                        presentationStartTime: localStorage.getItem(PRESENTATION_START) || null,
+                        targetCompletionTime: localStorage.getItem(TARGET_COMPLETION) || null
                     },
                     slideData: [],
                     summary: {
@@ -259,7 +228,7 @@ export default {
                 };
 
                 // Get presentation start time for calculating absolute times
-                const presentationStart = localStorage.getItem(PRESENTATION_START_KEY);
+                const presentationStart = localStorage.getItem(PRESENTATION_START);
                 const startTimestamp = presentationStart ? parseInt(presentationStart) : null;
 
                 // Process each slide
@@ -400,7 +369,7 @@ export default {
         },
 
         initializeTargetCompletionInput() {
-            const storedTargetCompletion = localStorage.getItem(TARGET_COMPLETION_KEY);
+            const storedTargetCompletion = localStorage.getItem(TARGET_COMPLETION);
             let targetDate = new Date();
 
             if (storedTargetCompletion) {
