@@ -64,7 +64,7 @@ When `useSlideTimes` is enabled:
 
 ### Multi-day decks (segments)
 
-For decks taught across multiple days (or any deck where pacing should reset partway through), mark each segment's opener slide with `pacerBoundary: true` in its frontmatter:
+For decks taught across multiple days (or any deck where pacing should reset partway through), mark each segment's opener slide with `pacerBoundary` in its frontmatter:
 
 ```md
 ---
@@ -74,6 +74,17 @@ pacerBoundary: true
 ---
 
 # Day 2
+```
+
+Pass a string instead of `true` to give the segment its own label (independent of the slide's `title`):
+
+```md
+---
+title: Applied Monitoring
+pacerBoundary: Day 1
+---
+
+# Cover
 ```
 
 The addon then groups slides into segments at each boundary. Banking, ETA, and remaining-time math scope to the current segment only. Each segment gets its own presentation start time and target completion time in the settings dialog (when the dialog opens on a slide in segment N, you're editing segment N's settings).

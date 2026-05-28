@@ -96,7 +96,12 @@ export function computeSegments(slides) {
   }
   boundaries.forEach((b, i) => {
     const end = i + 1 < boundaries.length ? boundaries[i + 1] - 1 : slides.length - 1
-    const label = slides[b].meta?.slide?.frontmatter?.title ?? `Segment ${segs.length + 1}`
+    const fm = slides[b].meta?.slide?.frontmatter
+    // `pacerBoundary` accepts true (use slide's own `title` as label) or a
+    // string (used directly, so the deck's title can stay decoupled).
+    const label = typeof fm?.pacerBoundary === 'string' && fm.pacerBoundary.trim() !== ''
+      ? fm.pacerBoundary
+      : fm?.title ?? `Segment ${segs.length + 1}`
     segs.push({ index: segs.length, start: b, end, label })
   })
   return segs
