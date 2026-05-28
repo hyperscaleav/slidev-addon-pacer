@@ -25,6 +25,8 @@
             :projected-landing-page="projectedLanding.page" :projected-landing-title="projectedLanding.title"
             @raise-break="raiseBreak" />
 
+        <BreakNowNav :break-active="!!activeBreak" @break-now="raiseBreakNow" />
+
         <div class="w-1px opacity-10 bg-current m-1 lg:m-2"></div>
     </div>
 </template>
@@ -37,6 +39,7 @@ import BankedTimeNav from './BankedTimeNav.vue'
 import EstimatedEndTimeNav from './EstimatedEndTimeNav.vue'
 import TargetCompletionTime from './TargetCompletionTime.vue'
 import BreakTimerNav from './BreakTimerNav.vue'
+import BreakNowNav from './BreakNowNav.vue'
 import {
     CONFIG_KEY,
     STORAGE_KEYS,
@@ -46,6 +49,7 @@ import {
     writeSegmentBreaks,
     computeSegments,
     findSegmentForPage,
+    newBreakId,
 } from '../utils/constants'
 
 const { PRESENTATION_STARTS, TARGET_COMPLETIONS, SLIDE_TIMES, BREAKS } = STORAGE_KEYS
@@ -344,6 +348,27 @@ const raiseBreak = () => {
     segmentBreaks.value = updated
     window.dispatchEvent(new CustomEvent(EVENTS.BREAK_STATE_CHANGED, {
         detail: { activeBreak: updated.find(b => b.id === nextBreak.value.id) },
+    }))
+}
+
+// On-demand break: create a new break with startTime=now AND raisedAt=now,
+// so the overlay raises immediately without needing a prior schedule entry.
+const raiseBreakNow = (durationMinutes) => {
+    if (activeBreak.value) return
+    saveCurrentSlideTime()
+
+    const now = Date.now()
+    const newBreak = {
+        id: newBreakId(),
+        startTime: now,
+        durationMinutes,
+        raisedAt: now,
+    }
+    const updated = [...segmentBreaks.value, newBreak]
+    writeSegmentBreaks(currentSegment.value.index, updated)
+    segmentBreaks.value = updated
+    window.dispatchEvent(new CustomEvent(EVENTS.BREAK_STATE_CHANGED, {
+        detail: { activeBreak: newBreak },
     }))
 }
 
