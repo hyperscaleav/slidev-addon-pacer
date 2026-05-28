@@ -3,6 +3,9 @@
     <div v-if="show" class="config-dialog" :class="{ 'dark-mode': isDarkMode }" @click.stop>
         <div class="dialog-content">
             <h3>Presentation Timer Settings</h3>
+            <p v-if="hasMultipleSegments" class="segment-scope-note">
+                Editing: <strong>{{ currentSegment.label }}</strong> (segment {{ currentSegment.index + 1 }} of {{ segments.length }})
+            </p>
 
             <!-- Presentation Start Time Section -->
             <div class="time-inputs">
@@ -75,9 +78,17 @@
 </template>
 
 <script>
-import { CONFIG_KEY, STORAGE_KEYS, writeSetting } from '../utils/constants';
+import {
+    CONFIG_KEY,
+    STORAGE_KEYS,
+    writeSetting,
+    writeSegmentValue,
+    readSegmentValue,
+    computeSegments,
+    findSegmentForPage,
+} from '../utils/constants';
 
-const { TARGET_COMPLETION, PRESENTATION_START, SLIDE_TIMES } = STORAGE_KEYS;
+const { TARGET_COMPLETIONS, PRESENTATION_STARTS, SLIDE_TIMES } = STORAGE_KEYS;
 
 export default {
     name: 'SettingsDialog',
@@ -89,15 +100,10 @@ export default {
     },
     emits: ['close', 'settings-updated'],
     data() {
-        const storedTargetCompletion = localStorage.getItem(TARGET_COMPLETION);
-        const storedPresentationStart = localStorage.getItem(PRESENTATION_START);
-
         return {
-            useTargetCompletion: !!storedTargetCompletion,
+            useTargetCompletion: false,
             targetCompletionInput: '',
-            // Format date in local timezone
-            presentationStartInput: storedPresentationStart ?
-                this.formatDateForLocalInput(new Date(parseInt(storedPresentationStart))) : '',
+            presentationStartInput: '',
             // Confirmation dialog state
             showConfirmDialog: false,
             confirmationTitle: '',
@@ -111,7 +117,15 @@ export default {
         }
     },
     computed: {
-        // Detect dark mode for dialog styling
+        segments() {
+            return computeSegments(this.$slidev?.nav?.slides ?? []);
+        },
+        currentSegment() {
+            return findSegmentForPage(this.segments, this.$slidev?.nav?.currentPage ?? 1);
+        },
+        hasMultipleSegments() {
+            return this.segments.length > 1;
+        },
         isDarkMode() {
             const body = document.body;
             const html = document.documentElement;
@@ -130,16 +144,16 @@ export default {
         },
 
         saveSettings() {
-            // Save target completion settings
+            const segIdx = this.currentSegment.index;
+
             if (this.useTargetCompletion) {
-                writeSetting(TARGET_COMPLETION, new Date(this.targetCompletionInput).getTime());
+                writeSegmentValue(TARGET_COMPLETIONS, segIdx, new Date(this.targetCompletionInput).getTime());
             } else {
-                writeSetting(TARGET_COMPLETION, null);
+                writeSegmentValue(TARGET_COMPLETIONS, segIdx, null);
             }
 
-            // Save presentation start time
             if (this.presentationStartInput) {
-                writeSetting(PRESENTATION_START, new Date(this.presentationStartInput).getTime());
+                writeSegmentValue(PRESENTATION_STARTS, segIdx, new Date(this.presentationStartInput).getTime());
             }
 
             this.$emit('settings-updated');
@@ -147,8 +161,9 @@ export default {
         },
 
         resetSettings() {
-            writeSetting(TARGET_COMPLETION, null);
-            writeSetting(PRESENTATION_START, null);
+            const segIdx = this.currentSegment.index;
+            writeSegmentValue(TARGET_COMPLETIONS, segIdx, null);
+            writeSegmentValue(PRESENTATION_STARTS, segIdx, null);
 
             this.useTargetCompletion = false;
             this.presentationStartInput = '';
@@ -157,12 +172,12 @@ export default {
 
         setStartTimeNow() {
             const now = Date.now();
-            writeSetting(PRESENTATION_START, now);
+            writeSegmentValue(PRESENTATION_STARTS, this.currentSegment.index, now);
             this.presentationStartInput = this.formatDateForLocalInput(new Date(now));
         },
 
         clearStartTime() {
-            writeSetting(PRESENTATION_START, null);
+            writeSegmentValue(PRESENTATION_STARTS, this.currentSegment.index, null);
             this.presentationStartInput = '';
         },
 
@@ -210,8 +225,9 @@ export default {
                         exportDate: now.toISOString(),
                         totalSlides: slides.length,
                         slidesWithRecordedTimes: Object.keys(slideTimes).length,
-                        presentationStartTime: localStorage.getItem(PRESENTATION_START) || null,
-                        targetCompletionTime: localStorage.getItem(TARGET_COMPLETION) || null
+                        presentationStarts: localStorage.getItem(PRESENTATION_STARTS) || null,
+                        targetCompletions: localStorage.getItem(TARGET_COMPLETIONS) || null,
+                        segments: this.segments,
                     },
                     slideData: [],
                     summary: {
@@ -227,12 +243,10 @@ export default {
                     }
                 };
 
-                // Get presentation start time for calculating absolute times
-                const presentationStart = localStorage.getItem(PRESENTATION_START);
-                const startTimestamp = presentationStart ? parseInt(presentationStart) : null;
+                // Process each slide. Absolute slide start/end timestamps are
+                // anchored per segment to its own presentation-start setting.
+                const segmentCumulativeTime = new Map();
 
-                // Process each slide
-                let cumulativeTime = 0; // Track cumulative time through presentation
                 slides.forEach((slide, index) => {
                     const slideNum = index + 1;
                     const slideTitle = slide.meta?.slide?.frontmatter?.title || `Slide ${slideNum}`;
@@ -241,21 +255,23 @@ export default {
                     const actualTimeMin = actualTimeSec / 60;
                     const variance = plannedTimeMin - actualTimeMin;
 
-                    // Calculate start and end times if presentation start time is available
+                    const seg = findSegmentForPage(this.segments, slideNum);
+                    const segStart = readSegmentValue(PRESENTATION_STARTS, seg.index);
+                    const startTimestamp = segStart ? parseInt(segStart) : null;
+
                     let slideStartTime = null;
                     let slideEndTime = null;
                     let slideStartTimestamp = null;
                     let slideEndTimestamp = null;
-                    
+
                     if (startTimestamp && actualTimeSec > 0) {
-                        slideStartTimestamp = startTimestamp + (cumulativeTime * 1000);
+                        const cumulative = segmentCumulativeTime.get(seg.index) ?? 0;
+                        slideStartTimestamp = startTimestamp + (cumulative * 1000);
                         slideEndTimestamp = slideStartTimestamp + (actualTimeSec * 1000);
                         slideStartTime = new Date(slideStartTimestamp).toISOString();
                         slideEndTime = new Date(slideEndTimestamp).toISOString();
+                        segmentCumulativeTime.set(seg.index, cumulative + actualTimeSec);
                     }
-
-                    // Add to cumulative time for next slide
-                    cumulativeTime += actualTimeSec;
 
                     // Add to summary
                     exportData.summary.totalPlannedTime += plannedTimeMin;
@@ -266,10 +282,11 @@ export default {
                     else if (variance < -0.25) exportData.summary.slidesBehind++;
                     else exportData.summary.slidesOnTime++;
 
-                    // Add comprehensive slide data
                     exportData.slideData.push({
                         slideNumber: slideNum,
                         title: slideTitle,
+                        segmentIndex: seg.index,
+                        segmentLabel: seg.label,
                         plannedTimeMinutes: plannedTimeMin,
                         actualTimeSeconds: actualTimeSec,
                         actualTimeMinutes: actualTimeMin,
@@ -368,26 +385,28 @@ export default {
             return `${year}-${month}-${day}T${hours}:${minutes}`;
         },
 
-        initializeTargetCompletionInput() {
-            const storedTargetCompletion = localStorage.getItem(TARGET_COMPLETION);
-            let targetDate = new Date();
+        loadInputsForCurrentSegment() {
+            const segIdx = this.currentSegment.index;
 
-            if (storedTargetCompletion) {
-                targetDate.setTime(parseInt(storedTargetCompletion));
-            } else {
-                // Default to 1 hour from now
-                targetDate.setTime(Date.now() + (60 * 60 * 1000)); // +1 hour
-            }
+            const storedStart = readSegmentValue(PRESENTATION_STARTS, segIdx);
+            this.presentationStartInput = storedStart
+                ? this.formatDateForLocalInput(new Date(parseInt(storedStart)))
+                : '';
 
+            const storedTarget = readSegmentValue(TARGET_COMPLETIONS, segIdx);
+            this.useTargetCompletion = !!storedTarget;
+
+            const targetDate = new Date();
+            targetDate.setTime(storedTarget ? parseInt(storedTarget) : Date.now() + (60 * 60 * 1000));
             this.targetCompletionInput = this.formatDateForLocalInput(targetDate);
         }
     },
     watch: {
-        // Initialize inputs when dialog becomes visible
+        // Reload inputs each time the dialog opens, scoped to the current segment.
         show: {
             handler(newShow) {
                 if (newShow) {
-                    this.initializeTargetCompletionInput();
+                    this.loadInputsForCurrentSegment();
                 }
             },
             immediate: true
@@ -397,6 +416,16 @@ export default {
 </script>
 
 <style scoped>
+.segment-scope-note {
+    font-size: 0.85rem;
+    color: #6b7280;
+    margin: -8px 0 12px 0;
+}
+
+.dark-mode .segment-scope-note {
+    color: #9ca3af;
+}
+
 .start-time-section {
     display: flex;
     align-items: center;

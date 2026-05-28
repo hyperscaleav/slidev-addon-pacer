@@ -1,6 +1,6 @@
 <template>
   <button v-if="$slidev.nav.isPresenter" class="slidev-icon-btn aspect-ratio-initial end-time-nav" :title="tooltipText"
-    @click="openSettingsDialog">
+    @click="openSettings">
     <mdi-crystal-ball class="slidev-icon" />
     <div class="time-container">
       <span class="end-time-text" :class="timeClass">{{ formattedEndTime }}</span>
@@ -8,79 +8,46 @@
   </button>
 </template>
 
-
 <script setup>
-import { computed, ref, onMounted, onUnmounted } from 'vue'
-import { CONFIG_KEY, STORAGE_KEYS, EVENTS } from '../utils/constants'
+import { computed } from 'vue'
+import { CONFIG_KEY, EVENTS } from '../utils/constants'
 
-const { TARGET_COMPLETION } = STORAGE_KEYS
-
-// Props from TimerBar
 const props = defineProps({
   estimatedEndTime: {
     type: Date,
-    default: null
+    default: null,
   },
   bankedTimeMinutes: {
     type: Number,
-    required: true
+    required: true,
   },
   remainingTimeMinutes: {
     type: Number,
-    required: true
+    required: true,
   },
   targetCompletionTime: {
     type: Number,
-    default: null
+    default: null,
   },
   presentationStartTime: {
     type: Number,
-    default: null
+    default: null,
   },
   currentSlideElapsed: {
     type: Number,
-    required: true
+    required: true,
   },
   currentTime: {
     type: Number,
-    required: true
-  }
+    required: true,
+  },
 })
 
-// Reactive data
-const targetCompletionTime = ref(props.targetCompletionTime)
-
-// Watch for changes to targetCompletionTime prop
-const loadTargetCompletionTime = () => {
-  const stored = localStorage.getItem(TARGET_COMPLETION)
-  if (stored) {
-    targetCompletionTime.value = parseInt(stored)
-  }
-}
-
-// Get Slidev configuration
 const use12HourFormat = $slidev.configs?.[CONFIG_KEY]?.use12HourFormat ?? false
 
-// Calculate estimated finish time using the passed estimatedEndTime prop
-const estimatedFinishTime = computed(() => {
-  return props.estimatedEndTime ? props.estimatedEndTime.getTime() : null
-})
-
-// Format time for display
 const formattedEndTime = computed(() => {
-  const timestamp = estimatedFinishTime.value
-
-  // Check for invalid timestamp
-  if (!timestamp || isNaN(timestamp)) {
-    return '--:--'
-  }
-
-  const date = new Date(timestamp)
-
-  // Check for invalid date
-  if (isNaN(date.getTime())) {
-    return '--:--'
-  }
+  const date = props.estimatedEndTime
+  if (!date || isNaN(date.getTime())) return '--:--'
 
   const hours = date.getHours()
   const minutes = date.getMinutes()
@@ -89,70 +56,43 @@ const formattedEndTime = computed(() => {
     const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours
     const ampm = hours >= 12 ? 'PM' : 'AM'
     return `${displayHours}:${minutes.toString().padStart(2, '0')} ${ampm}`
-  } else {
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
   }
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
 })
 
-// CSS class for time styling
 const timeClass = computed(() => {
-  if (!targetCompletionTime.value || !props.presentationStartTime) {
+  if (!props.targetCompletionTime || !props.presentationStartTime || !props.estimatedEndTime) {
     return 'time-neutral'
   }
 
-  // Compare estimated finish time with target
-  const deltaMinutes = (estimatedFinishTime.value - targetCompletionTime.value) / (60 * 1000)
+  const deltaMinutes = (props.estimatedEndTime.getTime() - props.targetCompletionTime) / (60 * 1000)
 
-  if (Math.abs(deltaMinutes) <= 5) {
-    return 'time-ahead' // Green when within 5 minutes
-  } else if (Math.abs(deltaMinutes) <= 15) {
-    return 'time-warning' // Yellow when within 15 minutes
-  } else {
-    return 'time-behind' // Red when outside 15 minutes
-  }
+  if (Math.abs(deltaMinutes) <= 5) return 'time-ahead'
+  if (Math.abs(deltaMinutes) <= 15) return 'time-warning'
+  return 'time-behind'
 })
 
-// Tooltip text
 const tooltipText = computed(() => {
-  const targetTime = targetCompletionTime.value ?
-    new Date(targetCompletionTime.value).toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: use12HourFormat
-    }) : 'Not set'
+  const targetTime = props.targetCompletionTime
+    ? new Date(props.targetCompletionTime).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: use12HourFormat,
+      })
+    : 'Not set'
 
   const remainingTime = `${props.remainingTimeMinutes.toFixed(1)}min remaining`
-  const bankedText = props.bankedTimeMinutes !== 0 ?
-    ` | ${props.bankedTimeMinutes > 0 ? '+' : ''}${props.bankedTimeMinutes.toFixed(1)}min banked` : ''
-
-  const targetInfo = targetCompletionTime.value ?
-    `Target: ${targetTime}` :
-    'No target set'
+  const bankedText = props.bankedTimeMinutes !== 0
+    ? ` | ${props.bankedTimeMinutes > 0 ? '+' : ''}${props.bankedTimeMinutes.toFixed(1)}min banked`
+    : ''
+  const targetInfo = props.targetCompletionTime ? `Target: ${targetTime}` : 'No target set'
 
   return `Estimated end: ${formattedEndTime.value} | ${targetInfo} | ${remainingTime}${bankedText} | Click to configure`
 })
 
-// Function to open settings dialog
-const openSettingsDialog = () => {
+const openSettings = () => {
   window.dispatchEvent(new CustomEvent(EVENTS.OPEN_SETTINGS))
 }
-
-// Listen for in-window settings changes from SettingsDialog
-const handleSettingsUpdated = (event) => {
-  const { key, value } = event.detail
-  if (key === TARGET_COMPLETION) {
-    targetCompletionTime.value = value ? parseInt(value) : null
-  }
-}
-
-onMounted(() => {
-  loadTargetCompletionTime()
-  window.addEventListener(EVENTS.SETTINGS_UPDATED, handleSettingsUpdated)
-})
-
-onUnmounted(() => {
-  window.removeEventListener(EVENTS.SETTINGS_UPDATED, handleSettingsUpdated)
-})
 </script>
 
 <style scoped>
@@ -177,16 +117,6 @@ onUnmounted(() => {
   text-align: center;
 }
 
-.delta-indicator {
-  font-family: 'Courier New', monospace;
-  font-size: 0.7rem;
-  font-weight: normal;
-}
-
-.time-future {
-  color: #6b7280 !important;
-}
-
 .time-neutral {
   color: var(--slidev-color-text, inherit) !important;
 }
@@ -201,11 +131,6 @@ onUnmounted(() => {
 
 .time-behind {
   color: #dc2626 !important;
-}
-
-/* Dark mode adjustments */
-.dark .time-future {
-  color: #9ca3af !important;
 }
 
 .dark .time-ahead {
