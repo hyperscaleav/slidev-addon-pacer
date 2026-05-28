@@ -472,6 +472,9 @@
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
     color: #333;
     min-width: 300px;
+    width: min(640px, 92vw);
+    max-height: 90vh;
+    overflow-y: auto;
     transition: background-color 0.2s ease, color 0.2s ease;
 }
 

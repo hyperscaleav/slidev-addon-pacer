@@ -91,6 +91,50 @@ The addon then groups slides into segments at each boundary. Banking, ETA, and r
 
 If no `pacerBoundary` markers exist, the whole deck is treated as a single segment (the default).
 
+### Breaks
+
+Breaks are wall-clock-anchored, not content-anchored: you tell the pacer when your breaks are (10:30 AM, 12:00 PM, 2:30 PM, ...) and how long they last, and the pacer shows you where they'll fall in your content given your current pacing. There are no break slides to maintain in the deck.
+
+Configure breaks per segment in the settings dialog. The dialog shows every segment as its own section, so you can set up Day 1, Day 2, and Day 3's start times, target completions, and break schedules all in one place. Each break has a start time and a duration.
+
+While a break is upcoming:
+- A break chip appears in the presenter nav bar showing the time until the next break.
+- The chip's tooltip names the slide the break is projected to land on at current pacing.
+- Banking and ETA both account for the break (target completion factors in upcoming break time).
+
+When a break is due:
+- The chip turns red and pulses.
+- Click it to raise the break overlay.
+
+You can also click the **Break Now** chip to take an on-demand break (5/10/15/30/60 min quick-picks). The overlay raises immediately, no schedule entry needed.
+
+While a break is active:
+- A fullscreen overlay shows on both the presenter and audience screens, with a "Back at H:MM" message and a live countdown.
+- The slide elapsed-time counter pauses (so the slide you were on doesn't get charged for break minutes).
+- When the countdown hits zero, it goes red and counts up (overrun).
+- The presenter clicks the "Resume presentation" button (or presses Escape) to dismiss.
+
+If a break runs over, the overrun shows up in the banking math the moment it's dismissed.
+
+### Forecast chip colors
+
+The crystal-ball chip (estimated end time) uses color and a direction arrow to indicate pace relative to the target:
+
+| Color | Arrow | Meaning |
+|-------|-------|---------|
+| Green | none | On target (within 5 min) |
+| Yellow | ↑ or ↓ | Slightly off (within 15 min) |
+| Red | ↑ | Ending too late (over 15 min over target) |
+| Blue | ↓ | Ending too early (over 15 min under target) |
+
+The tooltip spells out the same information in words.
+
+### Exporting and importing settings
+
+The settings dialog has an **Export** button that downloads a JSON file containing every segment's start time, target completion, and break list. Use this to save a known-good configuration between teaching sessions or to share it with another presenter. The **Import** button accepts the same JSON back via paste; importing replaces start/target/breaks for every segment in the file.
+
+This is separate from **Export slide times** (under "Slide timing data"), which dumps the recorded actual times per slide for post-session analysis.
+
 ## Configs
 
 ```yaml

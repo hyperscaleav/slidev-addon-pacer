@@ -1,50 +1,95 @@
 <template>
-    <!-- Configuration Dialog -->
     <div v-if="show" class="config-dialog" :class="{ 'dark-mode': isDarkMode }" @click.stop>
         <div class="dialog-content">
-            <h3>Presentation Timer Settings</h3>
-            <p v-if="hasMultipleSegments" class="segment-scope-note">
-                Editing: <strong>{{ currentSegment.label }}</strong> (segment {{ currentSegment.index + 1 }} of {{ segments.length }})
-            </p>
-
-            <!-- Presentation Start Time Section -->
-            <div class="time-inputs">
-                <label>
-                    <span>Presentation Start Time:</span>
-                </label>
-                <div class="start-time-section">
-                    <button @click="setStartTimeNow" class="small-button">Start Now</button>
-                    <span style="margin: 0 8px;">or</span>
-                    <input type="datetime-local" v-model="presentationStartInput" />
-                    <button @click="clearStartTime" class="small-button">Clear</button>
-                </div>
-                <p class="help-text">Set when the presentation should begin. Slide timers will be paused until this
-                    time.</p>
-            </div>
-
-            <!-- Target Completion Time Section -->
-            <div class="time-inputs">
-                <label class="checkbox-label">
-                    <input type="checkbox" v-model="useTargetCompletion" />
-                    <span>Set target completion time (for time banking)</span>
-                </label>
-                <div v-if="useTargetCompletion" class="target-completion-section">
-                    <p>Target completion time:</p>
-                    <input type="datetime-local" v-model="targetCompletionInput" />
+            <div class="dialog-header">
+                <h3>Presentation Timer Settings</h3>
+                <div class="dialog-header-actions">
+                    <button @click="showHelp = !showHelp" class="header-action-button">
+                        {{ showHelp ? 'Hide help' : 'Help' }}
+                    </button>
+                    <button @click="exportConfigs" class="header-action-button">Export</button>
+                    <button @click="showImport = !showImport" class="header-action-button">Import</button>
                 </div>
             </div>
 
-            <!-- Slide Time Management -->
-            <div class="time-inputs">
-                <h4>Slide Time Management</h4>
+            <div v-if="showHelp" class="help-panel">
+                <p><strong>Chips in the presenter nav bar:</strong></p>
+                <ul>
+                    <li><strong>Clock</strong>: wall-clock elapsed since this segment's start time</li>
+                    <li><strong>Timer</strong>: countdown for the current slide (red over plan)</li>
+                    <li><strong>Piggy bank</strong>: banked time for this segment</li>
+                    <li><strong>Crystal ball</strong>: estimated end of this segment. Up arrow = running long, down arrow = running short. Red = late, blue = early, yellow = slightly off, green = on target.</li>
+                    <li><strong>Bullseye</strong>: target completion time (when set)</li>
+                    <li><strong>Pause</strong>: time until next scheduled break, with projected landing slide</li>
+                    <li><strong>Break</strong>: take an on-demand break (pick a duration)</li>
+                </ul>
+                <p><strong>Segments</strong> come from <code>pacerBoundary: true</code> frontmatter on slides. The active segment is the one containing the slide you're on. Each segment has its own start, target, and breaks.</p>
+                <p><strong>Breaks</strong> are wall-clock anchored. When due, the break chip pulses red; click to raise the overlay. The overlay shows on both presenter and audience views and pauses the slide timer.</p>
+            </div>
+
+            <div v-if="showImport" class="import-panel">
+                <p class="help-text">Paste an exported settings JSON. This replaces start/target/breaks for every segment listed in the file.</p>
+                <textarea v-model="importJson" class="import-textarea" rows="6"
+                    placeholder='{"version": 1, "segments": [...]}'></textarea>
+                <div v-if="importError" class="import-error">{{ importError }}</div>
+                <div class="import-actions">
+                    <button @click="applyImport" class="small-button apply-import">Apply import</button>
+                    <button @click="showImport = false; importJson = ''; importError = ''" class="small-button">Cancel</button>
+                </div>
+            </div>
+
+            <div v-for="seg in segmentConfigs" :key="seg.index" class="segment-section"
+                :class="{ 'is-current': seg.index === currentSegment.index }">
+                <div class="segment-header">
+                    <span class="segment-title">{{ seg.label }}</span>
+                    <span v-if="seg.index === currentSegment.index" class="segment-current-badge">current</span>
+                    <span class="segment-pages">slides {{ seg.start + 1 }}&ndash;{{ seg.end + 1 }}</span>
+                </div>
+
+                <div class="segment-field">
+                    <label>Start time</label>
+                    <div class="field-row">
+                        <button @click="setStartNow(seg)" class="small-button">Start now</button>
+                        <span class="field-sep">or</span>
+                        <input type="datetime-local" v-model="seg.startInput" />
+                        <button v-if="seg.startInput" @click="seg.startInput = ''" class="small-button">Clear</button>
+                    </div>
+                </div>
+
+                <div class="segment-field">
+                    <label class="checkbox-label">
+                        <input type="checkbox" v-model="seg.useTargetCompletion" />
+                        <span>Target completion time</span>
+                    </label>
+                    <div v-if="seg.useTargetCompletion" class="field-row indented">
+                        <input type="datetime-local" v-model="seg.targetInput" />
+                    </div>
+                </div>
+
+                <div class="segment-field">
+                    <label>Breaks</label>
+                    <div v-if="seg.breaks.length === 0" class="no-breaks">No breaks scheduled.</div>
+                    <div v-for="(brk, idx) in seg.breaks" :key="brk.id" class="break-row">
+                        <input type="datetime-local" v-model="brk.startInput" class="break-start" />
+                        <input type="number" min="1" step="1" v-model.number="brk.durationMinutes" class="break-duration" />
+                        <span class="break-unit">min</span>
+                        <span v-if="brk.dismissedAt" class="break-state past">past</span>
+                        <span v-else-if="brk.raisedAt" class="break-state active">active</span>
+                        <button @click="removeBreak(seg, idx)" class="break-remove" title="Delete this break">&times;</button>
+                    </div>
+                    <button @click="addBreak(seg)" class="small-button add-break-button">+ Add break</button>
+                </div>
+            </div>
+
+            <div class="management-section">
+                <h4>Slide timing data</h4>
                 <div class="slide-time-management">
-                    <button @click="clearSlideTimes" class="management-button danger-button">Clear All Slide Times</button>
-                    <button @click="exportSlideTimes" class="management-button export-button">Export Slide Times</button>
+                    <button @click="clearSlideTimes" class="management-button danger-button">Clear all slide times</button>
+                    <button @click="exportSlideTimes" class="management-button export-button">Export slide times</button>
                 </div>
-                <p class="help-text">Clear all stored slide timing data or export it for analysis.</p>
+                <p class="help-text">Slide times are recorded during a presentation for calibration. Export the report to analyze, or clear all to start fresh.</p>
             </div>
 
-            <!-- Confirmation Dialog -->
             <div v-if="showConfirmDialog" class="confirmation-overlay" @click="cancelConfirmation">
                 <div class="confirmation-dialog" @click.stop>
                     <h3>{{ confirmationTitle }}</h3>
@@ -56,7 +101,6 @@
                 </div>
             </div>
 
-            <!-- Notification Dialog -->
             <div v-if="showNotification" class="notification-overlay" @click="closeNotification">
                 <div class="notification-dialog" @click.stop>
                     <h3>{{ notificationTitle }}</h3>
@@ -68,8 +112,7 @@
             </div>
 
             <div class="dialog-buttons">
-                <button @click="saveSettings">Save</button>
-                <button @click="resetSettings">Reset</button>
+                <button @click="saveSettings" class="primary-button">Save all</button>
                 <button @click="closeDialog">Cancel</button>
             </div>
         </div>
@@ -84,6 +127,9 @@ import {
     writeSetting,
     writeSegmentValue,
     readSegmentValue,
+    readSegmentBreaks,
+    writeSegmentBreaks,
+    newBreakId,
     computeSegments,
     findSegmentForPage,
 } from '../utils/constants';
@@ -101,20 +147,20 @@ export default {
     emits: ['close', 'settings-updated'],
     data() {
         return {
-            useTargetCompletion: false,
-            targetCompletionInput: '',
-            presentationStartInput: '',
-            // Confirmation dialog state
+            segmentConfigs: [],
+            showHelp: false,
+            showImport: false,
+            importJson: '',
+            importError: '',
             showConfirmDialog: false,
             confirmationTitle: '',
             confirmationMessage: '',
             confirmationAction: '',
             pendingAction: null,
-            // Notification dialog state
             showNotification: false,
             notificationTitle: '',
-            notificationMessage: ''
-        }
+            notificationMessage: '',
+        };
     },
     computed: {
         segments() {
@@ -123,13 +169,9 @@ export default {
         currentSegment() {
             return findSegmentForPage(this.segments, this.$slidev?.nav?.currentPage ?? 1);
         },
-        hasMultipleSegments() {
-            return this.segments.length > 1;
-        },
         isDarkMode() {
             const body = document.body;
             const html = document.documentElement;
-
             return body.classList.contains('dark') ||
                 html.classList.contains('dark') ||
                 body.classList.contains('dark-mode') ||
@@ -143,52 +185,155 @@ export default {
             this.$emit('close');
         },
 
+        loadAllSegmentConfigs() {
+            this.segmentConfigs = this.segments.map(seg => {
+                const storedStart = readSegmentValue(PRESENTATION_STARTS, seg.index);
+                const storedTarget = readSegmentValue(TARGET_COMPLETIONS, seg.index);
+                return {
+                    index: seg.index,
+                    label: seg.label,
+                    start: seg.start,
+                    end: seg.end,
+                    startInput: storedStart
+                        ? this.formatDateForLocalInput(new Date(parseInt(storedStart)))
+                        : '',
+                    useTargetCompletion: !!storedTarget,
+                    targetInput: this.formatDateForLocalInput(
+                        new Date(storedTarget ? parseInt(storedTarget) : Date.now() + 60 * 60 * 1000)
+                    ),
+                    breaks: readSegmentBreaks(seg.index).map(b => ({
+                        ...b,
+                        startInput: this.formatDateForLocalInput(new Date(b.startTime)),
+                    })),
+                };
+            });
+        },
+
         saveSettings() {
-            const segIdx = this.currentSegment.index;
+            for (const seg of this.segmentConfigs) {
+                if (seg.startInput) {
+                    writeSegmentValue(PRESENTATION_STARTS, seg.index, new Date(seg.startInput).getTime());
+                } else {
+                    writeSegmentValue(PRESENTATION_STARTS, seg.index, null);
+                }
 
-            if (this.useTargetCompletion) {
-                writeSegmentValue(TARGET_COMPLETIONS, segIdx, new Date(this.targetCompletionInput).getTime());
-            } else {
-                writeSegmentValue(TARGET_COMPLETIONS, segIdx, null);
-            }
+                if (seg.useTargetCompletion) {
+                    writeSegmentValue(TARGET_COMPLETIONS, seg.index, new Date(seg.targetInput).getTime());
+                } else {
+                    writeSegmentValue(TARGET_COMPLETIONS, seg.index, null);
+                }
 
-            if (this.presentationStartInput) {
-                writeSegmentValue(PRESENTATION_STARTS, segIdx, new Date(this.presentationStartInput).getTime());
+                const persistedBreaks = seg.breaks
+                    .filter(b => b.startInput && b.durationMinutes > 0)
+                    .map(b => {
+                        const out = {
+                            id: b.id,
+                            startTime: new Date(b.startInput).getTime(),
+                            durationMinutes: Number(b.durationMinutes),
+                        };
+                        if (b.raisedAt) out.raisedAt = b.raisedAt;
+                        if (b.dismissedAt) out.dismissedAt = b.dismissedAt;
+                        return out;
+                    });
+                writeSegmentBreaks(seg.index, persistedBreaks);
             }
 
             this.$emit('settings-updated');
             this.closeDialog();
         },
 
-        resetSettings() {
-            const segIdx = this.currentSegment.index;
-            writeSegmentValue(TARGET_COMPLETIONS, segIdx, null);
-            writeSegmentValue(PRESENTATION_STARTS, segIdx, null);
-
-            this.useTargetCompletion = false;
-            this.presentationStartInput = '';
-            this.closeDialog();
+        setStartNow(seg) {
+            seg.startInput = this.formatDateForLocalInput(new Date());
         },
 
-        setStartTimeNow() {
-            const now = Date.now();
-            writeSegmentValue(PRESENTATION_STARTS, this.currentSegment.index, now);
-            this.presentationStartInput = this.formatDateForLocalInput(new Date(now));
+        addBreak(seg) {
+            const defaultStart = Date.now() + 60 * 60 * 1000;
+            seg.breaks.push({
+                id: newBreakId(),
+                startInput: this.formatDateForLocalInput(new Date(defaultStart)),
+                durationMinutes: 15,
+            });
         },
 
-        clearStartTime() {
-            writeSegmentValue(PRESENTATION_STARTS, this.currentSegment.index, null);
-            this.presentationStartInput = '';
+        removeBreak(seg, index) {
+            seg.breaks.splice(index, 1);
+        },
+
+        // Export per-segment configs (start, target, breaks) as JSON for
+        // reuse across teaching sessions. Distinct from "export slide times"
+        // which dumps recorded slide timing data.
+        exportConfigs() {
+            const exportData = {
+                version: 1,
+                exportedAt: new Date().toISOString(),
+                segments: this.segments.map(seg => {
+                    const start = readSegmentValue(PRESENTATION_STARTS, seg.index);
+                    const target = readSegmentValue(TARGET_COMPLETIONS, seg.index);
+                    return {
+                        index: seg.index,
+                        label: seg.label,
+                        presentationStart: start ? parseInt(start) : null,
+                        targetCompletion: target ? parseInt(target) : null,
+                        breaks: readSegmentBreaks(seg.index),
+                    };
+                }),
+            };
+
+            const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const now = new Date();
+            const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `pacer-settings-${dateStr}.json`;
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }, 0);
+        },
+
+        applyImport() {
+            this.importError = '';
+            let parsed;
+            try {
+                parsed = JSON.parse(this.importJson);
+            } catch (e) {
+                this.importError = `Invalid JSON: ${e.message}`;
+                return;
+            }
+            if (!parsed || !Array.isArray(parsed.segments)) {
+                this.importError = 'Expected an object with a "segments" array.';
+                return;
+            }
+
+            try {
+                for (const seg of parsed.segments) {
+                    if (typeof seg.index !== 'number') continue;
+                    writeSegmentValue(PRESENTATION_STARTS, seg.index, seg.presentationStart ?? null);
+                    writeSegmentValue(TARGET_COMPLETIONS, seg.index, seg.targetCompletion ?? null);
+                    writeSegmentBreaks(seg.index, Array.isArray(seg.breaks) ? seg.breaks : []);
+                }
+            } catch (e) {
+                this.importError = `Import failed: ${e.message}`;
+                return;
+            }
+
+            this.showImport = false;
+            this.importJson = '';
+            this.loadAllSegmentConfigs();
+            this.showNotificationDialog('Import complete', `Applied settings to ${parsed.segments.length} segment(s).`);
         },
 
         clearSlideTimes() {
             this.showConfirmation(
-                'Clear All Slide Times',
-                'Are you sure you want to clear all slide timing data? This action cannot be undone.',
-                'Clear All',
+                'Clear all slide times',
+                'Are you sure you want to clear all stored slide timing data? This action cannot be undone.',
+                'Clear all',
                 () => {
                     writeSetting(SLIDE_TIMES, null);
-                    this.showNotificationDialog('Success', 'All slide timing data has been cleared.');
+                    this.showNotificationDialog('Cleared', 'All slide timing data has been cleared.');
                 }
             );
         },
@@ -196,30 +341,24 @@ export default {
         exportSlideTimes() {
             const savedTimes = localStorage.getItem(SLIDE_TIMES);
             if (!savedTimes) {
-                this.showNotificationDialog('No Data', 'No slide timing data available to export.');
+                this.showNotificationDialog('No data', 'No slide timing data available to export.');
                 return;
             }
 
             try {
                 const slideTimes = JSON.parse(savedTimes);
-                
-                // Access Slidev data through the component instance
                 const slidevNav = this.$slidev?.nav;
                 const slidevConfigs = this.$slidev?.configs;
-                
                 if (!slidevNav || !slidevNav.slides) {
                     throw new Error('Unable to access Slidev navigation data');
                 }
-                
+
                 const slides = slidevNav.slides;
                 const defaultSlideTime = slidevConfigs?.[CONFIG_KEY]?.defaultSlideTime || 2;
-
-                // Format current date and time for filename
                 const now = new Date();
                 const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
                 const timeStr = `${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}`;
 
-                // Build comprehensive export data
                 const exportData = {
                     metadata: {
                         exportDate: now.toISOString(),
@@ -239,14 +378,11 @@ export default {
                         slidesOnTime: 0,
                         averagePlannedTime: 0,
                         averageActualTime: 0,
-                        averageVariance: 0
-                    }
+                        averageVariance: 0,
+                    },
                 };
 
-                // Process each slide. Absolute slide start/end timestamps are
-                // anchored per segment to its own presentation-start setting.
                 const segmentCumulativeTime = new Map();
-
                 slides.forEach((slide, index) => {
                     const slideNum = index + 1;
                     const slideTitle = slide.meta?.slide?.frontmatter?.title || `Slide ${slideNum}`;
@@ -273,11 +409,9 @@ export default {
                         segmentCumulativeTime.set(seg.index, cumulative + actualTimeSec);
                     }
 
-                    // Add to summary
                     exportData.summary.totalPlannedTime += plannedTimeMin;
                     exportData.summary.totalActualTime += actualTimeMin;
                     exportData.summary.totalVariance += variance;
-
                     if (variance > 0.25) exportData.summary.slidesAhead++;
                     else if (variance < -0.25) exportData.summary.slidesBehind++;
                     else exportData.summary.slidesOnTime++;
@@ -290,54 +424,47 @@ export default {
                         plannedTimeMinutes: plannedTimeMin,
                         actualTimeSeconds: actualTimeSec,
                         actualTimeMinutes: actualTimeMin,
-                        variance: variance,
+                        variance,
                         varianceSeconds: variance * 60,
                         status: variance > 0.25 ? 'ahead' : (variance < -0.25 ? 'behind' : 'on-time'),
-                        slideStartTime: slideStartTime,
-                        slideEndTime: slideEndTime,
-                        slideStartTimestamp: slideStartTimestamp,
-                        slideEndTimestamp: slideEndTimestamp,
-                        hasRecordedTime: actualTimeSec > 0
+                        slideStartTime,
+                        slideEndTime,
+                        slideStartTimestamp,
+                        slideEndTimestamp,
+                        hasRecordedTime: actualTimeSec > 0,
                     });
                 });
 
-                // Calculate averages
                 if (exportData.slideData.length > 0) {
                     exportData.summary.averagePlannedTime = exportData.summary.totalPlannedTime / exportData.slideData.length;
                     exportData.summary.averageActualTime = exportData.summary.totalActualTime / exportData.slideData.length;
                     exportData.summary.averageVariance = exportData.summary.totalVariance / exportData.slideData.length;
                 }
 
-                // Convert to JSON and create download
                 const jsonStr = JSON.stringify(exportData, null, 2);
                 const blob = new Blob([jsonStr], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
-
-                // Create descriptive filename
                 const slidesCount = exportData.metadata.totalSlides;
                 const recordedCount = exportData.metadata.slidesWithRecordedTimes;
-                const filename = `slidev-timing-report-${slidesCount}slides-${recordedCount}recorded-${dateStr}-${timeStr}.json`;
+                const filename = `pacer-timing-${slidesCount}slides-${recordedCount}recorded-${dateStr}-${timeStr}.json`;
 
                 const a = document.createElement('a');
                 a.href = url;
                 a.download = filename;
                 document.body.appendChild(a);
                 a.click();
-
-                // Clean up
                 setTimeout(() => {
                     document.body.removeChild(a);
-                    window.URL.revokeObjectURL(url);
+                    URL.revokeObjectURL(url);
                 }, 0);
 
-                this.showNotificationDialog('Export Complete', `Slide timing data exported successfully as "${filename}".`);
+                this.showNotificationDialog('Export complete', `Slide timing data exported as "${filename}".`);
             } catch (e) {
                 console.error('Error exporting slide times:', e);
-                this.showNotificationDialog('Export Error', `Error exporting slide times: ${e.message}`);
+                this.showNotificationDialog('Export error', `Error exporting slide times: ${e.message}`);
             }
         },
 
-        // Confirmation dialog methods
         showConfirmation(title, message, actionText, callback) {
             this.confirmationTitle = title;
             this.confirmationMessage = message;
@@ -347,9 +474,7 @@ export default {
         },
 
         confirmAction() {
-            if (this.pendingAction) {
-                this.pendingAction();
-            }
+            if (this.pendingAction) this.pendingAction();
             this.cancelConfirmation();
         },
 
@@ -361,7 +486,6 @@ export default {
             this.pendingAction = null;
         },
 
-        // Notification dialog methods
         showNotificationDialog(title, message) {
             this.notificationTitle = title;
             this.notificationMessage = message;
@@ -375,62 +499,262 @@ export default {
         },
 
         formatDateForLocalInput(date) {
-            // Format date for datetime-local input in local timezone
             const year = date.getFullYear();
             const month = (date.getMonth() + 1).toString().padStart(2, '0');
             const day = date.getDate().toString().padStart(2, '0');
             const hours = date.getHours().toString().padStart(2, '0');
             const minutes = date.getMinutes().toString().padStart(2, '0');
-
             return `${year}-${month}-${day}T${hours}:${minutes}`;
         },
-
-        loadInputsForCurrentSegment() {
-            const segIdx = this.currentSegment.index;
-
-            const storedStart = readSegmentValue(PRESENTATION_STARTS, segIdx);
-            this.presentationStartInput = storedStart
-                ? this.formatDateForLocalInput(new Date(parseInt(storedStart)))
-                : '';
-
-            const storedTarget = readSegmentValue(TARGET_COMPLETIONS, segIdx);
-            this.useTargetCompletion = !!storedTarget;
-
-            const targetDate = new Date();
-            targetDate.setTime(storedTarget ? parseInt(storedTarget) : Date.now() + (60 * 60 * 1000));
-            this.targetCompletionInput = this.formatDateForLocalInput(targetDate);
-        }
     },
     watch: {
-        // Reload inputs each time the dialog opens, scoped to the current segment.
         show: {
             handler(newShow) {
                 if (newShow) {
-                    this.loadInputsForCurrentSegment();
+                    this.loadAllSegmentConfigs();
+                    this.showHelp = false;
+                    this.showImport = false;
+                    this.importJson = '';
+                    this.importError = '';
                 }
             },
-            immediate: true
+            immediate: true,
         }
     }
 }
 </script>
 
 <style scoped>
-.segment-scope-note {
-    font-size: 0.85rem;
-    color: #6b7280;
-    margin: -8px 0 12px 0;
+.dialog-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 8px;
 }
 
-.dark-mode .segment-scope-note {
+.dialog-header h3 {
+    margin: 0;
+}
+
+.dialog-header-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.header-action-button {
+    padding: 4px 10px;
+    font-size: 0.75rem;
+    background: transparent;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    color: #374151;
+    cursor: pointer;
+}
+
+.header-action-button:hover {
+    background: #f3f4f6;
+}
+
+.dark-mode .header-action-button {
+    border-color: #4b5563;
+    color: #d1d5db;
+}
+
+.dark-mode .header-action-button:hover {
+    background: #374151;
+}
+
+.help-panel {
+    background: #f3f4f6;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin-bottom: 12px;
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+
+.help-panel p {
+    margin: 0 0 8px 0;
+}
+
+.help-panel ul {
+    margin: 4px 0 8px 0;
+    padding-left: 20px;
+}
+
+.help-panel li {
+    margin: 2px 0;
+}
+
+.help-panel code {
+    font-family: 'Courier New', monospace;
+    background: rgba(0, 0, 0, 0.08);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 0.85em;
+}
+
+.dark-mode .help-panel {
+    background: #1f2937;
+    border-color: #374151;
+    color: #d1d5db;
+}
+
+.dark-mode .help-panel code {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.import-panel {
+    background: #fef3c7;
+    border: 1px solid #fcd34d;
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin-bottom: 12px;
+}
+
+.import-textarea {
+    width: 100%;
+    box-sizing: border-box;
+    font-family: 'Courier New', monospace;
+    font-size: 0.8rem;
+    padding: 8px;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    background: #ffffff;
+    color: #111827;
+    resize: vertical;
+}
+
+.dark-mode .import-panel {
+    background: #422006;
+    border-color: #78350f;
+    color: #fef3c7;
+}
+
+.dark-mode .import-textarea {
+    background: #1f2937;
+    border-color: #4b5563;
+    color: #f9fafb;
+}
+
+.import-error {
+    color: #b91c1c;
+    font-size: 0.8rem;
+    margin-top: 6px;
+}
+
+.dark-mode .import-error {
+    color: #fca5a5;
+}
+
+.import-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.apply-import {
+    background: #fcd34d;
+    border-color: #f59e0b;
+    color: #78350f;
+    font-weight: 600;
+}
+
+.segment-section {
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin-bottom: 12px;
+}
+
+.segment-section.is-current {
+    border-color: #21cab9;
+    box-shadow: 0 0 0 1px #21cab9;
+}
+
+.dark-mode .segment-section {
+    border-color: #374151;
+}
+
+.dark-mode .segment-section.is-current {
+    border-color: #21cab9;
+    box-shadow: 0 0 0 1px #21cab9;
+}
+
+.segment-header {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.dark-mode .segment-header {
+    border-bottom-color: #374151;
+}
+
+.segment-title {
+    font-weight: 600;
+    font-size: 1rem;
+}
+
+.segment-current-badge {
+    font-size: 0.7rem;
+    padding: 2px 6px;
+    background: #21cab9;
+    color: #080c16;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+}
+
+.segment-pages {
+    font-size: 0.75rem;
+    color: #6b7280;
+    margin-left: auto;
+}
+
+.dark-mode .segment-pages {
     color: #9ca3af;
 }
 
-.start-time-section {
+.segment-field {
+    margin: 10px 0;
+}
+
+.segment-field label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.segment-field label.checkbox-label {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-top: 8px;
+    gap: 6px;
+    font-weight: 500;
+}
+
+.field-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.field-row.indented {
+    margin-left: 22px;
+    margin-top: 4px;
+}
+
+.field-sep {
+    color: #6b7280;
+    font-size: 0.85rem;
 }
 
 .small-button {
@@ -440,7 +764,7 @@ export default {
     border-radius: 4px;
     background: #f8f9fa;
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: background-color 0.15s;
 }
 
 .small-button:hover {
@@ -461,17 +785,135 @@ export default {
     font-size: 0.8rem;
     color: #6b7280;
     margin-top: 4px;
-    margin-bottom: 0;
+    margin-bottom: 6px;
 }
 
 .dark-mode .help-text {
     color: #9ca3af;
 }
 
+.no-breaks {
+    font-size: 0.85rem;
+    color: #9ca3af;
+    font-style: italic;
+    margin: 4px 0;
+}
+
+.break-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 6px 0;
+}
+
+.break-start {
+    flex: 1;
+    min-width: 0;
+}
+
+.break-duration {
+    width: 60px;
+}
+
+.break-unit {
+    font-size: 0.8rem;
+    color: #6b7280;
+}
+
+.dark-mode .break-unit {
+    color: #9ca3af;
+}
+
+.break-state {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 2px 6px;
+    border-radius: 3px;
+    background: #e5e7eb;
+    color: #374151;
+}
+
+.break-state.active {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.break-state.past {
+    background: #d1d5db;
+    color: #6b7280;
+}
+
+.dark-mode .break-state {
+    background: #374151;
+    color: #d1d5db;
+}
+
+.dark-mode .break-state.active {
+    background: #78350f;
+    color: #fef3c7;
+}
+
+.dark-mode .break-state.past {
+    background: #1f2937;
+    color: #6b7280;
+}
+
+.break-remove {
+    background: transparent;
+    border: 1px solid #d1d5db;
+    color: #6b7280;
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.break-remove:hover {
+    background: #fee2e2;
+    border-color: #ef4444;
+    color: #b91c1c;
+}
+
+.dark-mode .break-remove {
+    border-color: #4b5563;
+    color: #9ca3af;
+}
+
+.dark-mode .break-remove:hover {
+    background: #7f1d1d;
+    border-color: #b91c1c;
+    color: #fecaca;
+}
+
+.add-break-button {
+    margin-top: 6px;
+}
+
+.management-section {
+    border-top: 1px solid #e5e7eb;
+    padding-top: 12px;
+    margin-top: 16px;
+}
+
+.dark-mode .management-section {
+    border-top-color: #374151;
+}
+
+.management-section h4 {
+    margin: 0 0 6px 0;
+    font-size: 0.95rem;
+}
+
 .slide-time-management {
     display: flex;
     gap: 8px;
-    margin-top: 8px;
+    margin-top: 4px;
 }
 
 .management-button {
@@ -480,9 +922,8 @@ export default {
     border-radius: 4px;
     border: 1px solid;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all 0.15s ease;
     font-weight: 500;
-    min-width: 120px;
 }
 
 .danger-button {
@@ -493,8 +934,6 @@ export default {
 
 .danger-button:hover {
     background: #dc2626;
-    transform: translateY(-1px);
-    box-shadow: 0 2px 4px rgba(220, 38, 38, 0.2);
 }
 
 .export-button {
@@ -505,8 +944,6 @@ export default {
 
 .export-button:hover {
     background: #2563eb;
-    transform: translateY(-1px);
-    box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
 }
 
 .dark-mode .danger-button {
@@ -514,28 +951,39 @@ export default {
     border-color: #991b1b;
 }
 
-.dark-mode .danger-button:hover {
-    background: #991b1b;
-    box-shadow: 0 2px 4px rgba(153, 27, 27, 0.3);
-}
-
 .dark-mode .export-button {
     background: #3b82f6;
     border-color: #2563eb;
 }
 
-.dark-mode .export-button:hover {
-    background: #2563eb;
-    box-shadow: 0 2px 4px rgba(37, 99, 235, 0.3);
+.dialog-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid #e5e7eb;
 }
 
-/* Confirmation Dialog */
-.confirmation-overlay {
+.dark-mode .dialog-buttons {
+    border-top-color: #374151;
+}
+
+.dialog-buttons .primary-button {
+    background: #21cab9;
+    color: #080c16;
+    border: 1px solid #1ba99a;
+    font-weight: 600;
+}
+
+.dialog-buttons .primary-button:hover {
+    background: #1ba99a;
+}
+
+.confirmation-overlay,
+.notification-overlay {
     position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    inset: 0;
     background: rgba(0, 0, 0, 0.6);
     z-index: 1100;
     display: flex;
@@ -543,30 +991,37 @@ export default {
     justify-content: center;
 }
 
-.confirmation-dialog {
+.confirmation-dialog,
+.notification-dialog {
     background: white;
     border-radius: 8px;
     padding: 24px;
     max-width: 400px;
     width: 90%;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-    transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 .confirmation-dialog h3 {
     margin: 0 0 12px 0;
     font-size: 18px;
-    font-weight: 600;
     color: #ef4444;
 }
 
-.confirmation-dialog p {
+.notification-dialog h3 {
+    margin: 0 0 12px 0;
+    font-size: 18px;
+    color: #059669;
+}
+
+.confirmation-dialog p,
+.notification-dialog p {
     margin: 0 0 20px 0;
     color: #374151;
     line-height: 1.5;
 }
 
-.confirmation-buttons {
+.confirmation-buttons,
+.notification-buttons {
     display: flex;
     gap: 8px;
     justify-content: flex-end;
@@ -579,11 +1034,6 @@ export default {
     border: 1px solid #d1d5db;
     border-radius: 4px;
     cursor: pointer;
-    transition: background-color 0.2s ease;
-}
-
-.cancel-button:hover {
-    background: #e5e7eb;
 }
 
 .confirm-button {
@@ -593,53 +1043,6 @@ export default {
     border: 1px solid #dc2626;
     border-radius: 4px;
     cursor: pointer;
-    transition: background-color 0.2s ease;
-}
-
-.confirm-button:hover {
-    background: #dc2626;
-}
-
-/* Notification Dialog */
-.notification-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.6);
-    z-index: 1100;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.notification-dialog {
-    background: white;
-    border-radius: 8px;
-    padding: 24px;
-    max-width: 400px;
-    width: 90%;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-    transition: background-color 0.2s ease, color 0.2s ease;
-}
-
-.notification-dialog h3 {
-    margin: 0 0 12px 0;
-    font-size: 18px;
-    font-weight: 600;
-    color: #059669;
-}
-
-.notification-dialog p {
-    margin: 0 0 20px 0;
-    color: #374151;
-    line-height: 1.5;
-}
-
-.notification-buttons {
-    display: flex;
-    justify-content: flex-end;
 }
 
 .notification-button {
@@ -649,26 +1052,12 @@ export default {
     border: 1px solid #2563eb;
     border-radius: 4px;
     cursor: pointer;
-    transition: background-color 0.2s ease;
 }
 
-.notification-button:hover {
-    background: #2563eb;
-}
-
-/* Dark mode styles for dialogs */
 .dark-mode .confirmation-dialog,
 .dark-mode .notification-dialog {
     background: #2d3748;
     color: #f7fafc;
-}
-
-.dark-mode .confirmation-dialog h3 {
-    color: #fc8181;
-}
-
-.dark-mode .notification-dialog h3 {
-    color: #68d391;
 }
 
 .dark-mode .confirmation-dialog p,
@@ -680,18 +1069,5 @@ export default {
     background: #4a5568;
     color: #f7fafc;
     border-color: #718096;
-}
-
-.dark-mode .cancel-button:hover {
-    background: #718096;
-}
-
-.dark-mode .confirm-button {
-    background: #e53e3e;
-    border-color: #c53030;
-}
-
-.dark-mode .confirm-button:hover {
-    background: #c53030;
 }
 </style>
