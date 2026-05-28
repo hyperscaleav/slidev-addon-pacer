@@ -2,10 +2,25 @@
 
 A short Slidev deck that exercises every pacer feature: per-segment chips, segment-scoped settings, and wall-clock-anchored breaks.
 
-To run from the addon root:
+## First-time setup
 
 ```sh
 pnpm install
+pnpm approve-builds   # accept both esbuild and vue-demi
+```
+
+pnpm v11 requires interactive approval for any package that ships post-install build scripts, and won't run `pnpm <script>` until you've approved (or rejected) them. Pick the prompt's "all" option (`a`), then `y`. This is a one-time per-user setup; the approval persists in pnpm's user state, not in the repo.
+
+If you skip this step, `pnpm dev` fails with:
+
+```
+[ERR_PNPM_IGNORED_BUILDS] Ignored build scripts: esbuild@..., vue-demi@...
+[ERROR] Command failed with exit code 1: '.../pnpm' install
+```
+
+## Run the demo
+
+```sh
 pnpm dev
 ```
 
