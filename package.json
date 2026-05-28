@@ -1,6 +1,6 @@
 {
   "name": "slidev-addon-pacer",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Slidev addon for presentation time management: dual-lane race, per-slide time budgets, time banking, and target completion tracking.",
   "engines": {
     "node": ">=18.0.0",

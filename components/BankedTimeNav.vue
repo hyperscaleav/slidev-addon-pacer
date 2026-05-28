@@ -37,6 +37,10 @@ const props = defineProps({
     timeDeltaInfo: {
         type: Object,
         default: () => ({ show: false, delta: 0, formattedDelta: '' })
+    },
+    segmentLabel: {
+        type: String,
+        default: '',
     }
 })
 
@@ -76,13 +80,14 @@ const bankedClass = computed(() => {
     }
 })
 
-// Tooltip text
 const tooltipText = computed(() => {
+    const scopePrefix = props.segmentLabel ? `${props.segmentLabel}: ` : ''
+
     if (!props.presentationStartTime) {
-        return 'Banked time (no start time set) | Click to configure'
+        return `${scopePrefix}banked time (no start time set) | Click to configure`
     }
 
-    let statusText = ''
+    let statusText
     if (props.bankedTimeMinutes > 0) {
         statusText = `${formattedBankedTime.value} ahead of schedule`
     } else if (props.bankedTimeMinutes < 0) {
@@ -91,14 +96,11 @@ const tooltipText = computed(() => {
         statusText = 'On schedule'
     }
 
-    // Show breakdown of banking sources
     const breakdownParts = []
-
     if (props.schedulingDeltaMinutes !== 0) {
         const sign = props.schedulingDeltaMinutes > 0 ? '+' : ''
         breakdownParts.push(`${sign}${props.schedulingDeltaMinutes.toFixed(1)}min scheduling buffer`)
     }
-
     if (props.dynamicBankingMinutes !== 0) {
         const sign = props.dynamicBankingMinutes > 0 ? '+' : ''
         const slideText = props.completedSlides === 1 ? 'slide' : 'slides'
@@ -108,8 +110,7 @@ const tooltipText = computed(() => {
     }
 
     const breakdownText = breakdownParts.length > 0 ? ` (${breakdownParts.join(', ')})` : ''
-
-    return `${statusText}${breakdownText} | Click to configure`
+    return `${scopePrefix}${statusText}${breakdownText} | Click to configure`
 })
 
 // Function to open settings dialog
