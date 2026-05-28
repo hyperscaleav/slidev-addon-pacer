@@ -7,7 +7,7 @@
                 {{ formattedCountdown }}
             </div>
             <p v-if="isOverrun" class="break-overrun-note">Break over &mdash; running long</p>
-            <button class="break-dismiss" @click="$emit('dismiss')">Resume presentation</button>
+            <button v-if="$slidev.nav.isPresenter" class="break-dismiss" @click="$emit('dismiss')">Resume presentation</button>
         </div>
     </div>
 </template>
