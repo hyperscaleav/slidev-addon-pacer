@@ -47,19 +47,27 @@ import {
     readSegmentValue,
     readSegmentBreaks,
     writeSegmentBreaks,
+    readSegmentVisits,
+    appendSegmentVisit,
     computeSegments,
     findSegmentForPage,
     newBreakId,
+    newVisitId,
+    getSlideTitle,
 } from '../utils/constants'
 
-const { PRESENTATION_STARTS, TARGET_COMPLETIONS, SLIDE_TIMES, BREAKS } = STORAGE_KEYS
+const { PRESENTATION_STARTS, TARGET_COMPLETIONS, SLIDE_VISITS, BREAKS } = STORAGE_KEYS
 
 const currentTime = ref(Date.now())
 const intervalId = ref(null)
 const presentationStartTime = ref(null)
 const targetCompletionTime = ref(null)
-const slideStartTime = ref(Date.now())
-const slideElapsedTimes = ref({})
+// Visit log per segment: { [segIdx]: [...persisted visit entries] }.
+const segmentVisits = ref({})
+// The visit currently in progress, or null while paused (e.g. during a
+// break). When a slide transition happens this gets flushed to
+// segmentVisits + persisted via appendSegmentVisit.
+const currentVisit = ref(null)
 const segmentBreaks = ref([])
 
 const segments = computed(() => computeSegments($slidev.nav.slides))
@@ -77,15 +85,20 @@ const loadSegmentBreaks = () => {
     segmentBreaks.value = readSegmentBreaks(currentSegment.value.index)
 }
 
-// The single break that is currently raised (raisedAt set, not yet dismissed).
+const loadAllSegmentVisits = () => {
+    const next = {}
+    for (const seg of segments.value) {
+        next[seg.index] = readSegmentVisits(seg.index)
+    }
+    segmentVisits.value = next
+}
+
 const activeBreak = computed(() => segmentBreaks.value.find(b => b.raisedAt && !b.dismissedAt) ?? null)
 
-// First upcoming break that hasn't been dismissed yet, sorted by startTime.
 const nextBreak = computed(() => {
     return segmentBreaks.value.find(b => !b.dismissedAt && !b.raisedAt) ?? null
 })
 
-// A break is "due" when its scheduled start has passed and nothing's active.
 const isBreakDue = computed(() => {
     if (activeBreak.value || !nextBreak.value) return false
     return currentTime.value >= nextBreak.value.startTime
@@ -116,14 +129,10 @@ const segmentTotalPlannedMinutes = computed(() => {
     return total
 })
 
-// Sum of all break durations in the current segment (planned, not consumed).
 const segmentTotalBreakMinutes = computed(() => {
     return segmentBreaks.value.reduce((sum, b) => sum + b.durationMinutes, 0)
 })
 
-// Time still to be spent on breaks: any unfinished portion of the active
-// break plus the full duration of every still-upcoming (undismissed,
-// unraised) break.
 const unconsumedBreakMinutes = computed(() => {
     let mins = 0
     if (activeBreak.value) {
@@ -140,19 +149,33 @@ const unconsumedBreakMinutes = computed(() => {
     return mins
 })
 
-// While a break is active the slide timer freezes. We achieve that by
-// returning the stored elapsed time as-is.
+// { slideNumber: totalSeconds } from the persisted visit log for the
+// CURRENT segment only. Excludes the visit-in-progress; the live counter
+// adds that on top.
+const slideTotalsThisSegment = computed(() => {
+    const segIdx = currentSegment.value.index
+    const visits = segmentVisits.value[segIdx] ?? []
+    const totals = {}
+    for (const v of visits) {
+        const sec = Math.max(0, (v.endedAt - v.startedAt) / 1000)
+        totals[v.slideNumber] = (totals[v.slideNumber] || 0) + sec
+    }
+    return totals
+})
+
 const currentSlideElapsed = computed(() => {
     const slideNum = $slidev.nav.currentPage
-    const storedTime = slideElapsedTimes.value[slideNum] || 0
+    const fromLog = slideTotalsThisSegment.value[slideNum] || 0
 
-    if (!presentationHasStarted.value || activeBreak.value) {
-        return storedTime
-    }
+    if (!currentVisit.value || currentVisit.value.slideNumber !== slideNum) return fromLog
+    if (!presentationHasStarted.value || activeBreak.value) return fromLog
 
-    const effectiveStartTime = Math.max(slideStartTime.value, presentationStartTime.value || slideStartTime.value)
-    const sessionTime = Math.max(0, (currentTime.value - effectiveStartTime) / 1000)
-    return storedTime + sessionTime
+    const effectiveStart = Math.max(
+        currentVisit.value.startedAt,
+        presentationStartTime.value || currentVisit.value.startedAt
+    )
+    const liveSec = Math.max(0, (currentTime.value - effectiveStart) / 1000)
+    return fromLog + liveSec
 })
 
 const currentSlidePlannedMinutes = computed(() => {
@@ -166,31 +189,6 @@ const completedSlides = computed(() => {
     return Math.max(0, Math.min(passedAbsolute, seg.end + 1) - seg.start)
 })
 
-const loadSlideElapsedTimes = () => {
-    try {
-        const saved = localStorage.getItem(SLIDE_TIMES)
-        slideElapsedTimes.value = saved ? JSON.parse(saved) : {}
-    } catch (e) {
-        slideElapsedTimes.value = {}
-    }
-}
-
-const startSlideTimer = () => {
-    if (!presentationHasStarted.value && presentationStartTime.value) {
-        slideStartTime.value = presentationStartTime.value
-    } else {
-        slideStartTime.value = currentTime.value
-    }
-}
-
-const saveCurrentSlideTime = () => {
-    const slideNum = $slidev.nav.currentPage
-    slideElapsedTimes.value[slideNum] = currentSlideElapsed.value
-    localStorage.setItem(SLIDE_TIMES, JSON.stringify(slideElapsedTimes.value))
-}
-
-// Scheduling delta: how much spare time the schedule has if everything
-// ran exactly to plan, including all breaks.
 const schedulingDeltaMinutes = computed(() => {
     if (!targetCompletionTime.value) return 0
     const totalPlannedMs = (segmentTotalPlannedMinutes.value + segmentTotalBreakMinutes.value) * 60 * 1000
@@ -201,20 +199,18 @@ const schedulingDeltaMinutes = computed(() => {
 const dynamicBankingMinutes = computed(() => {
     if (!presentationHasStarted.value) return 0
     const seg = currentSegment.value
+    const totals = slideTotalsThisSegment.value
     const lastCompletedIdx = Math.min($slidev.nav.currentPage - 2, seg.end)
     let dynamic = 0
     for (let idx = seg.start; idx <= lastCompletedIdx; idx++) {
         const slideNum = idx + 1
-        const planned = slideTimes.value[idx] || 2
-        const actual = (slideElapsedTimes.value[slideNum] || 0) / 60
-        dynamic += planned - actual
+        const plannedMin = slideTimes.value[idx] || 2
+        const actualMin = (totals[slideNum] || 0) / 60
+        dynamic += plannedMin - actualMin
     }
     return dynamic
 })
 
-// Banking == target - projected end. Computed as scheduling buffer plus
-// slide performance plus break performance (overrun on a finished break
-// subtracts; finishing early adds).
 const breakPerformanceMinutes = computed(() => {
     let delta = 0
     for (const b of segmentBreaks.value) {
@@ -231,8 +227,6 @@ const bankedTimeMinutes = computed(() =>
     schedulingDeltaMinutes.value + dynamicBankingMinutes.value + breakPerformanceMinutes.value
 )
 
-// Remaining presentation time in current segment (planned slide time only;
-// break time is tracked separately so the ETA can add it back in).
 const remainingTimeMinutes = computed(() => {
     const seg = currentSegment.value
     const startIdx = Math.max($slidev.nav.currentPage - 1, seg.start)
@@ -284,19 +278,15 @@ const timeDeltaInfo = computed(() => {
     return { show: true, delta: deltaMinutes, formattedDelta }
 })
 
-// Walk forward from the current slide using planned slide times to find
-// which slide the next break will probably land on. Returns { page, title }
-// or { page: null } if the break falls past the end of the segment.
 const projectedLanding = computed(() => {
     if (!nextBreak.value) return { page: null, title: '' }
 
     const msUntil = nextBreak.value.startTime - currentTime.value
     if (msUntil <= 0) {
-        // Break is already due: it lands here.
         const slide = $slidev.nav.slides[$slidev.nav.currentPage - 1]
         return {
             page: $slidev.nav.currentPage,
-            title: slide?.meta?.slide?.frontmatter?.title ?? '',
+            title: getSlideTitle(slide, $slidev.nav.currentPage),
         }
     }
 
@@ -304,7 +294,6 @@ const projectedLanding = computed(() => {
     const seg = currentSegment.value
     const currentIdx = $slidev.nav.currentPage - 1
 
-    // Time the presenter still has on this slide if they hit plan.
     const elapsedMin = currentSlideElapsed.value / 60
     const planMin = slideTimes.value[currentIdx] || 2
     const leftOnCurrent = Math.max(0, planMin - elapsedMin)
@@ -313,7 +302,7 @@ const projectedLanding = computed(() => {
         const slide = $slidev.nav.slides[currentIdx]
         return {
             page: currentIdx + 1,
-            title: slide?.meta?.slide?.frontmatter?.title ?? '',
+            title: getSlideTitle(slide, currentIdx + 1),
         }
     }
     remainingMin -= leftOnCurrent
@@ -324,7 +313,7 @@ const projectedLanding = computed(() => {
             const slide = $slidev.nav.slides[idx]
             return {
                 page: idx + 1,
-                title: slide?.meta?.slide?.frontmatter?.title ?? '',
+                title: getSlideTitle(slide, idx + 1),
             }
         }
         remainingMin -= plan
@@ -333,29 +322,76 @@ const projectedLanding = computed(() => {
     return { page: null, title: '(after segment ends)' }
 })
 
+// Open a new visit for the slide the presenter is currently on.
+const startCurrentVisit = () => {
+    const slideIdx = $slidev.nav.currentPage - 1
+    const slide = $slidev.nav.slides[slideIdx]
+    const seg = findSegmentForPage(segments.value, $slidev.nav.currentPage)
+    currentVisit.value = {
+        id: newVisitId(),
+        slideNumber: $slidev.nav.currentPage,
+        title: getSlideTitle(slide, $slidev.nav.currentPage),
+        segmentIndex: seg.index,
+        segmentLabel: seg.label,
+        plannedMinutes: slideTimes.value[slideIdx] || 2,
+        startedAt: Date.now(),
+    }
+}
+
+// Close the visit-in-progress and append it to the persisted log. Called
+// on slide transitions, break raises, and unmount. Skips logging if the
+// presentation never started, or if clamping startedAt to the
+// presentation start eats the entire visit.
+const endCurrentVisit = () => {
+    if (!currentVisit.value) return
+    if (!presentationHasStarted.value) {
+        currentVisit.value = null
+        return
+    }
+    const endedAt = Date.now()
+    const startedAt = Math.max(
+        currentVisit.value.startedAt,
+        presentationStartTime.value || currentVisit.value.startedAt
+    )
+    if (endedAt <= startedAt) {
+        currentVisit.value = null
+        return
+    }
+    const visit = {
+        id: currentVisit.value.id,
+        slideNumber: currentVisit.value.slideNumber,
+        title: currentVisit.value.title,
+        segmentIndex: currentVisit.value.segmentIndex,
+        segmentLabel: currentVisit.value.segmentLabel,
+        plannedMinutes: currentVisit.value.plannedMinutes,
+        startedAt,
+        endedAt,
+    }
+    appendSegmentVisit(visit.segmentIndex, visit)
+    segmentVisits.value = {
+        ...segmentVisits.value,
+        [visit.segmentIndex]: [...(segmentVisits.value[visit.segmentIndex] || []), visit],
+    }
+    currentVisit.value = null
+}
+
 const raiseBreak = () => {
     if (!nextBreak.value) return
-    // Snapshot the current slide's elapsed time before the timer pauses so
-    // session time accumulated up to this point isn't lost.
-    saveCurrentSlideTime()
+    endCurrentVisit()
 
     const updated = segmentBreaks.value.map(b =>
         b.id === nextBreak.value.id ? { ...b, raisedAt: Date.now() } : b
     )
     writeSegmentBreaks(currentSegment.value.index, updated)
-    // The settings-updated event triggers loadSegmentBreaks via our handler,
-    // but call it directly so the UI updates this tick.
     segmentBreaks.value = updated
     window.dispatchEvent(new CustomEvent(EVENTS.BREAK_STATE_CHANGED, {
         detail: { activeBreak: updated.find(b => b.id === nextBreak.value.id) },
     }))
 }
 
-// On-demand break: create a new break with startTime=now AND raisedAt=now,
-// so the overlay raises immediately without needing a prior schedule entry.
 const raiseBreakNow = (durationMinutes) => {
     if (activeBreak.value) return
-    saveCurrentSlideTime()
+    endCurrentVisit()
 
     const now = Date.now()
     const newBreak = {
@@ -380,23 +416,23 @@ const dismissBreak = () => {
     )
     writeSegmentBreaks(currentSegment.value.index, updated)
     segmentBreaks.value = updated
-    // Reset slideStartTime so post-break session time accumulates from now,
-    // not from when the slide was first visited.
-    slideStartTime.value = Date.now()
+    // Resume by opening a fresh visit for the slide the presenter is on.
+    startCurrentVisit()
     window.dispatchEvent(new CustomEvent(EVENTS.BREAK_STATE_CHANGED, {
         detail: { activeBreak: null },
     }))
 }
 
-// Allow the overlay's Escape-key handler to trigger dismiss.
 const onDismissKey = () => {
     if (activeBreak.value) dismissBreak()
 }
 
 const handleSettingsUpdated = (event) => {
     const { key, segmentIndex } = event.detail
-    if (key === SLIDE_TIMES) {
-        loadSlideElapsedTimes()
+    if (key === SLIDE_VISITS) {
+        // Visit log mutated externally (e.g. cleared from settings, or a
+        // dismiss in another window). Refresh our cache.
+        loadAllSegmentVisits()
     } else if (key === PRESENTATION_STARTS || key === TARGET_COMPLETIONS) {
         if (segmentIndex === currentSegment.value.index) {
             loadSegmentSettings()
@@ -413,25 +449,21 @@ watch(() => currentSegment.value.index, () => {
     loadSegmentBreaks()
 })
 
+// Page change: end the visit-in-progress, open a new one for the next
+// slide (unless a break is active, in which case we stay paused).
 watch(() => $slidev.nav.currentPage, (newPage, oldPage) => {
-    if (oldPage !== undefined) {
-        const slideNum = oldPage
-        const previousStoredTime = slideElapsedTimes.value[slideNum] || 0
-        let sessionTime = 0
-        if (presentationHasStarted.value && !activeBreak.value) {
-            sessionTime = (currentTime.value - slideStartTime.value) / 1000
-        }
-        slideElapsedTimes.value[slideNum] = previousStoredTime + sessionTime
-        localStorage.setItem(SLIDE_TIMES, JSON.stringify(slideElapsedTimes.value))
+    if (oldPage !== undefined && oldPage !== newPage) {
+        endCurrentVisit()
     }
-    startSlideTimer()
+    if (!activeBreak.value) {
+        startCurrentVisit()
+    }
 }, { immediate: true })
 
 onMounted(() => {
     loadSegmentSettings()
     loadSegmentBreaks()
-    loadSlideElapsedTimes()
-    startSlideTimer()
+    loadAllSegmentVisits()
     window.addEventListener(EVENTS.SETTINGS_UPDATED, handleSettingsUpdated)
     window.addEventListener('pacer-break-dismiss-key', onDismissKey)
 
@@ -441,7 +473,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-    saveCurrentSlideTime()
+    endCurrentVisit()
     window.removeEventListener(EVENTS.SETTINGS_UPDATED, handleSettingsUpdated)
     window.removeEventListener('pacer-break-dismiss-key', onDismissKey)
     if (intervalId.value) {

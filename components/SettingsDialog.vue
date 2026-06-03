@@ -82,12 +82,12 @@
             </div>
 
             <div class="management-section">
-                <h4>Slide timing data</h4>
+                <h4>Presentation trace</h4>
                 <div class="slide-time-management">
-                    <button @click="clearSlideTimes" class="management-button danger-button">Clear all slide times</button>
-                    <button @click="exportSlideTimes" class="management-button export-button">Export slide times</button>
+                    <button @click="clearVisitLog" class="management-button danger-button">Clear trace</button>
+                    <button @click="exportTrace" class="management-button export-button">Export trace</button>
                 </div>
-                <p class="help-text">Slide times are recorded during a presentation for calibration. Export the report to analyze, or clear all to start fresh.</p>
+                <p class="help-text">The trace records every slide visit in order with its start, end, planned, and actual durations. Export the full report or clear the log to start a fresh session.</p>
             </div>
 
             <div v-if="showConfirmDialog" class="confirmation-overlay" @click="cancelConfirmation">
@@ -124,17 +124,21 @@
 import {
     CONFIG_KEY,
     STORAGE_KEYS,
+    DEFAULT_PRESENTED_THRESHOLD_SECONDS,
     writeSetting,
     writeSegmentValue,
     readSegmentValue,
     readSegmentBreaks,
     writeSegmentBreaks,
+    readAllVisits,
+    readSegmentVisits,
     newBreakId,
     computeSegments,
     findSegmentForPage,
+    getSlideTitle,
 } from '../utils/constants';
 
-const { TARGET_COMPLETIONS, PRESENTATION_STARTS, SLIDE_TIMES } = STORAGE_KEYS;
+const { TARGET_COMPLETIONS, PRESENTATION_STARTS, SLIDE_VISITS } = STORAGE_KEYS;
 
 export default {
     name: 'SettingsDialog',
@@ -326,27 +330,26 @@ export default {
             this.showNotificationDialog('Import complete', `Applied settings to ${parsed.segments.length} segment(s).`);
         },
 
-        clearSlideTimes() {
+        clearVisitLog() {
             this.showConfirmation(
-                'Clear all slide times',
-                'Are you sure you want to clear all stored slide timing data? This action cannot be undone.',
-                'Clear all',
+                'Clear trace',
+                'Are you sure you want to clear the entire presentation trace? Every recorded slide visit will be deleted. This action cannot be undone.',
+                'Clear trace',
                 () => {
-                    writeSetting(SLIDE_TIMES, null);
-                    this.showNotificationDialog('Cleared', 'All slide timing data has been cleared.');
+                    writeSetting(SLIDE_VISITS, null);
+                    this.showNotificationDialog('Cleared', 'The presentation trace has been cleared.');
                 }
             );
         },
 
-        exportSlideTimes() {
-            const savedTimes = localStorage.getItem(SLIDE_TIMES);
-            if (!savedTimes) {
-                this.showNotificationDialog('No data', 'No slide timing data available to export.');
+        exportTrace() {
+            const allVisits = readAllVisits();
+            if (allVisits.length === 0) {
+                this.showNotificationDialog('No data', 'No presentation trace recorded yet.');
                 return;
             }
 
             try {
-                const slideTimes = JSON.parse(savedTimes);
                 const slidevNav = this.$slidev?.nav;
                 const slidevConfigs = this.$slidev?.configs;
                 if (!slidevNav || !slidevNav.slides) {
@@ -355,98 +358,178 @@ export default {
 
                 const slides = slidevNav.slides;
                 const defaultSlideTime = slidevConfigs?.[CONFIG_KEY]?.defaultSlideTime || 2;
+                const presentedThresholdSec = Number(
+                    slidevConfigs?.[CONFIG_KEY]?.presentationThresholdSeconds
+                    ?? DEFAULT_PRESENTED_THRESHOLD_SECONDS
+                );
+
                 const now = new Date();
                 const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
                 const timeStr = `${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}`;
+
+                // Build slide-visit rows.
+                const slideRows = allVisits.map(v => {
+                    const durationSec = Math.max(0, (v.endedAt - v.startedAt) / 1000);
+                    const planned = v.plannedMinutes ?? defaultSlideTime;
+                    return {
+                        kind: 'slide',
+                        slideNumber: v.slideNumber,
+                        title: v.title ?? `Slide ${v.slideNumber}`,
+                        segmentIndex: v.segmentIndex,
+                        segmentLabel: v.segmentLabel,
+                        plannedMinutes: planned,
+                        plannedSeconds: planned * 60,
+                        actualSeconds: durationSec,
+                        actualMinutes: durationSec / 60,
+                        startedAt: new Date(v.startedAt).toISOString(),
+                        endedAt: new Date(v.endedAt).toISOString(),
+                        startedAtTimestamp: v.startedAt,
+                        endedAtTimestamp: v.endedAt,
+                        presented: durationSec >= presentedThresholdSec,
+                    };
+                });
+
+                // Build break rows. Only completed breaks (raised AND
+                // dismissed) appear in the trace. An on-demand "Break Now"
+                // has startTime === raisedAt; a scheduled break has
+                // startTime set well before raisedAt.
+                const breakRows = [];
+                for (const seg of this.segments) {
+                    for (const b of readSegmentBreaks(seg.index)) {
+                        if (!b.raisedAt || !b.dismissedAt) continue;
+                        const durationSec = Math.max(0, (b.dismissedAt - b.raisedAt) / 1000);
+                        breakRows.push({
+                            kind: 'break',
+                            breakId: b.id,
+                            segmentIndex: seg.index,
+                            segmentLabel: seg.label,
+                            plannedMinutes: b.durationMinutes,
+                            plannedSeconds: b.durationMinutes * 60,
+                            actualSeconds: durationSec,
+                            actualMinutes: durationSec / 60,
+                            startedAt: new Date(b.raisedAt).toISOString(),
+                            endedAt: new Date(b.dismissedAt).toISOString(),
+                            startedAtTimestamp: b.raisedAt,
+                            endedAtTimestamp: b.dismissedAt,
+                            scheduledStartTime: new Date(b.startTime).toISOString(),
+                            scheduledStartTimestamp: b.startTime,
+                            wasScheduled: b.startTime !== b.raisedAt,
+                        });
+                    }
+                }
+
+                // Single ordered timeline: slides and breaks together,
+                // sorted by their actual start timestamp. Visit/entry
+                // numbering is assigned after the merge so it reflects
+                // the final order.
+                const trace = [...slideRows, ...breakRows]
+                    .sort((a, b) => a.startedAtTimestamp - b.startedAtTimestamp)
+                    .map((row, idx) => ({ entryNumber: idx + 1, ...row }));
+
+                // Derived per-slide aggregate (slide entries only).
+                const aggregateBySlide = new Map();
+                for (const row of trace) {
+                    if (row.kind !== 'slide') continue;
+                    const key = row.slideNumber;
+                    const prior = aggregateBySlide.get(key) ?? {
+                        slideNumber: row.slideNumber,
+                        title: row.title,
+                        segmentIndex: row.segmentIndex,
+                        segmentLabel: row.segmentLabel,
+                        plannedMinutes: row.plannedMinutes,
+                        visitCount: 0,
+                        presentedVisitCount: 0,
+                        actualSeconds: 0,
+                    };
+                    prior.visitCount += 1;
+                    if (row.presented) prior.presentedVisitCount += 1;
+                    prior.actualSeconds += row.actualSeconds;
+                    aggregateBySlide.set(key, prior);
+                }
+
+                const slideData = [];
+                let slidesAhead = 0, slidesBehind = 0, slidesOnTime = 0;
+                let totalPlanned = 0, totalActual = 0, totalVariance = 0;
+                aggregateBySlide.forEach(entry => {
+                    const actualMin = entry.actualSeconds / 60;
+                    const variance = entry.plannedMinutes - actualMin;
+                    const status = variance > 0.25 ? 'ahead' : (variance < -0.25 ? 'behind' : 'on-time');
+                    if (status === 'ahead') slidesAhead += 1;
+                    else if (status === 'behind') slidesBehind += 1;
+                    else slidesOnTime += 1;
+                    totalPlanned += entry.plannedMinutes;
+                    totalActual += actualMin;
+                    totalVariance += variance;
+                    slideData.push({
+                        slideNumber: entry.slideNumber,
+                        title: entry.title,
+                        segmentIndex: entry.segmentIndex,
+                        segmentLabel: entry.segmentLabel,
+                        plannedTimeMinutes: entry.plannedMinutes,
+                        actualTimeSeconds: entry.actualSeconds,
+                        actualTimeMinutes: actualMin,
+                        visitCount: entry.visitCount,
+                        presentedVisitCount: entry.presentedVisitCount,
+                        variance,
+                        varianceSeconds: variance * 60,
+                        status,
+                    });
+                });
+                slideData.sort((a, b) => a.slideNumber - b.slideNumber);
+
+                // Slides the deck contains but the trace never touched.
+                const visitedSlideNumbers = new Set(aggregateBySlide.keys());
+                const skipped = [];
+                slides.forEach((slide, idx) => {
+                    const slideNum = idx + 1;
+                    if (visitedSlideNumbers.has(slideNum)) return;
+                    const seg = findSegmentForPage(this.segments, slideNum);
+                    skipped.push({
+                        slideNumber: slideNum,
+                        title: getSlideTitle(slide, slideNum),
+                        segmentIndex: seg.index,
+                        segmentLabel: seg.label,
+                        plannedTimeMinutes: slide.meta?.slide?.frontmatter?.slideTime ?? defaultSlideTime,
+                    });
+                });
+
+                const totalVisits = trace.filter(r => r.kind === 'slide').length;
+                const totalBreaks = trace.filter(r => r.kind === 'break').length;
 
                 const exportData = {
                     metadata: {
                         exportDate: now.toISOString(),
                         totalSlides: slides.length,
-                        slidesWithRecordedTimes: Object.keys(slideTimes).length,
+                        totalEntries: trace.length,
+                        totalVisits,
+                        totalBreaks,
+                        slidesVisited: aggregateBySlide.size,
+                        slidesSkipped: skipped.length,
+                        presentedThresholdSeconds: presentedThresholdSec,
                         presentationStarts: localStorage.getItem(PRESENTATION_STARTS) || null,
                         targetCompletions: localStorage.getItem(TARGET_COMPLETIONS) || null,
                         segments: this.segments,
                     },
-                    slideData: [],
+                    trace,
+                    slideData,
+                    skippedSlides: skipped,
                     summary: {
-                        totalPlannedTime: 0,
-                        totalActualTime: 0,
-                        totalVariance: 0,
-                        slidesAhead: 0,
-                        slidesBehind: 0,
-                        slidesOnTime: 0,
-                        averagePlannedTime: 0,
-                        averageActualTime: 0,
-                        averageVariance: 0,
+                        totalPlannedTime: totalPlanned,
+                        totalActualTime: totalActual,
+                        totalVariance,
+                        slidesAhead,
+                        slidesBehind,
+                        slidesOnTime,
+                        averagePlannedTime: slideData.length > 0 ? totalPlanned / slideData.length : 0,
+                        averageActualTime: slideData.length > 0 ? totalActual / slideData.length : 0,
+                        averageVariance: slideData.length > 0 ? totalVariance / slideData.length : 0,
                     },
                 };
-
-                const segmentCumulativeTime = new Map();
-                slides.forEach((slide, index) => {
-                    const slideNum = index + 1;
-                    const slideTitle = slide.meta?.slide?.frontmatter?.title || `Slide ${slideNum}`;
-                    const plannedTimeMin = slide.meta?.slide?.frontmatter?.slideTime || defaultSlideTime;
-                    const actualTimeSec = slideTimes[slideNum] || 0;
-                    const actualTimeMin = actualTimeSec / 60;
-                    const variance = plannedTimeMin - actualTimeMin;
-
-                    const seg = findSegmentForPage(this.segments, slideNum);
-                    const segStart = readSegmentValue(PRESENTATION_STARTS, seg.index);
-                    const startTimestamp = segStart ? parseInt(segStart) : null;
-
-                    let slideStartTime = null;
-                    let slideEndTime = null;
-                    let slideStartTimestamp = null;
-                    let slideEndTimestamp = null;
-
-                    if (startTimestamp && actualTimeSec > 0) {
-                        const cumulative = segmentCumulativeTime.get(seg.index) ?? 0;
-                        slideStartTimestamp = startTimestamp + (cumulative * 1000);
-                        slideEndTimestamp = slideStartTimestamp + (actualTimeSec * 1000);
-                        slideStartTime = new Date(slideStartTimestamp).toISOString();
-                        slideEndTime = new Date(slideEndTimestamp).toISOString();
-                        segmentCumulativeTime.set(seg.index, cumulative + actualTimeSec);
-                    }
-
-                    exportData.summary.totalPlannedTime += plannedTimeMin;
-                    exportData.summary.totalActualTime += actualTimeMin;
-                    exportData.summary.totalVariance += variance;
-                    if (variance > 0.25) exportData.summary.slidesAhead++;
-                    else if (variance < -0.25) exportData.summary.slidesBehind++;
-                    else exportData.summary.slidesOnTime++;
-
-                    exportData.slideData.push({
-                        slideNumber: slideNum,
-                        title: slideTitle,
-                        segmentIndex: seg.index,
-                        segmentLabel: seg.label,
-                        plannedTimeMinutes: plannedTimeMin,
-                        actualTimeSeconds: actualTimeSec,
-                        actualTimeMinutes: actualTimeMin,
-                        variance,
-                        varianceSeconds: variance * 60,
-                        status: variance > 0.25 ? 'ahead' : (variance < -0.25 ? 'behind' : 'on-time'),
-                        slideStartTime,
-                        slideEndTime,
-                        slideStartTimestamp,
-                        slideEndTimestamp,
-                        hasRecordedTime: actualTimeSec > 0,
-                    });
-                });
-
-                if (exportData.slideData.length > 0) {
-                    exportData.summary.averagePlannedTime = exportData.summary.totalPlannedTime / exportData.slideData.length;
-                    exportData.summary.averageActualTime = exportData.summary.totalActualTime / exportData.slideData.length;
-                    exportData.summary.averageVariance = exportData.summary.totalVariance / exportData.slideData.length;
-                }
 
                 const jsonStr = JSON.stringify(exportData, null, 2);
                 const blob = new Blob([jsonStr], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
-                const slidesCount = exportData.metadata.totalSlides;
-                const recordedCount = exportData.metadata.slidesWithRecordedTimes;
-                const filename = `pacer-timing-${slidesCount}slides-${recordedCount}recorded-${dateStr}-${timeStr}.json`;
+                const filename = `pacer-trace-${trace.length}entries-${dateStr}-${timeStr}.json`;
 
                 const a = document.createElement('a');
                 a.href = url;
@@ -458,10 +541,10 @@ export default {
                     URL.revokeObjectURL(url);
                 }, 0);
 
-                this.showNotificationDialog('Export complete', `Slide timing data exported as "${filename}".`);
+                this.showNotificationDialog('Export complete', `Presentation trace exported as "${filename}".`);
             } catch (e) {
-                console.error('Error exporting slide times:', e);
-                this.showNotificationDialog('Export error', `Error exporting slide times: ${e.message}`);
+                console.error('Error exporting trace:', e);
+                this.showNotificationDialog('Export error', `Error exporting trace: ${e.message}`);
             }
         },
 
