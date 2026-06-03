@@ -367,20 +367,18 @@ export default {
                 const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
                 const timeStr = `${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}`;
 
-                // Build the ordered trace: one row per visit, in append order
-                // across all segments. Each row carries the slide title at
-                // the time of the visit (resolved from frontmatter / heading
-                // / fallback when the visit was recorded).
-                const slideTrace = allVisits.map((v, idx) => {
+                // Build slide-visit rows.
+                const slideRows = allVisits.map(v => {
                     const durationSec = Math.max(0, (v.endedAt - v.startedAt) / 1000);
+                    const planned = v.plannedMinutes ?? defaultSlideTime;
                     return {
-                        visitNumber: idx + 1,
+                        kind: 'slide',
                         slideNumber: v.slideNumber,
                         title: v.title ?? `Slide ${v.slideNumber}`,
                         segmentIndex: v.segmentIndex,
                         segmentLabel: v.segmentLabel,
-                        plannedMinutes: v.plannedMinutes ?? defaultSlideTime,
-                        plannedSeconds: (v.plannedMinutes ?? defaultSlideTime) * 60,
+                        plannedMinutes: planned,
+                        plannedSeconds: planned * 60,
                         actualSeconds: durationSec,
                         actualMinutes: durationSec / 60,
                         startedAt: new Date(v.startedAt).toISOString(),
@@ -391,11 +389,47 @@ export default {
                     };
                 });
 
-                // Derived per-slide aggregate: sum across all visits to each
-                // slide. Useful for at-a-glance variance vs plan, distinct
-                // from the trace which preserves order and visit count.
+                // Build break rows. Only completed breaks (raised AND
+                // dismissed) appear in the trace. An on-demand "Break Now"
+                // has startTime === raisedAt; a scheduled break has
+                // startTime set well before raisedAt.
+                const breakRows = [];
+                for (const seg of this.segments) {
+                    for (const b of readSegmentBreaks(seg.index)) {
+                        if (!b.raisedAt || !b.dismissedAt) continue;
+                        const durationSec = Math.max(0, (b.dismissedAt - b.raisedAt) / 1000);
+                        breakRows.push({
+                            kind: 'break',
+                            breakId: b.id,
+                            segmentIndex: seg.index,
+                            segmentLabel: seg.label,
+                            plannedMinutes: b.durationMinutes,
+                            plannedSeconds: b.durationMinutes * 60,
+                            actualSeconds: durationSec,
+                            actualMinutes: durationSec / 60,
+                            startedAt: new Date(b.raisedAt).toISOString(),
+                            endedAt: new Date(b.dismissedAt).toISOString(),
+                            startedAtTimestamp: b.raisedAt,
+                            endedAtTimestamp: b.dismissedAt,
+                            scheduledStartTime: new Date(b.startTime).toISOString(),
+                            scheduledStartTimestamp: b.startTime,
+                            wasScheduled: b.startTime !== b.raisedAt,
+                        });
+                    }
+                }
+
+                // Single ordered timeline: slides and breaks together,
+                // sorted by their actual start timestamp. Visit/entry
+                // numbering is assigned after the merge so it reflects
+                // the final order.
+                const trace = [...slideRows, ...breakRows]
+                    .sort((a, b) => a.startedAtTimestamp - b.startedAtTimestamp)
+                    .map((row, idx) => ({ entryNumber: idx + 1, ...row }));
+
+                // Derived per-slide aggregate (slide entries only).
                 const aggregateBySlide = new Map();
-                for (const row of slideTrace) {
+                for (const row of trace) {
+                    if (row.kind !== 'slide') continue;
                     const key = row.slideNumber;
                     const prior = aggregateBySlide.get(key) ?? {
                         slideNumber: row.slideNumber,
@@ -459,11 +493,16 @@ export default {
                     });
                 });
 
+                const totalVisits = trace.filter(r => r.kind === 'slide').length;
+                const totalBreaks = trace.filter(r => r.kind === 'break').length;
+
                 const exportData = {
                     metadata: {
                         exportDate: now.toISOString(),
                         totalSlides: slides.length,
-                        totalVisits: slideTrace.length,
+                        totalEntries: trace.length,
+                        totalVisits,
+                        totalBreaks,
                         slidesVisited: aggregateBySlide.size,
                         slidesSkipped: skipped.length,
                         presentedThresholdSeconds: presentedThresholdSec,
@@ -471,7 +510,7 @@ export default {
                         targetCompletions: localStorage.getItem(TARGET_COMPLETIONS) || null,
                         segments: this.segments,
                     },
-                    slideTrace,
+                    trace,
                     slideData,
                     skippedSlides: skipped,
                     summary: {
@@ -490,7 +529,7 @@ export default {
                 const jsonStr = JSON.stringify(exportData, null, 2);
                 const blob = new Blob([jsonStr], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
-                const filename = `pacer-trace-${slideTrace.length}visits-${dateStr}-${timeStr}.json`;
+                const filename = `pacer-trace-${trace.length}entries-${dateStr}-${timeStr}.json`;
 
                 const a = document.createElement('a');
                 a.href = url;

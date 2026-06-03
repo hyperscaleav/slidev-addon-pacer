@@ -137,7 +137,7 @@ This is separate from the **presentation trace** (below), which captures what ac
 
 ### Presentation trace
 
-Every slide visit is recorded as an ordered event log: each time the presenter lands on a slide, an entry opens; each time they leave it (or a break is raised), the entry closes with its `endedAt` timestamp. Going `1 → 2 → 3 → 2 → 1 → 6 → 1 → 2 → 3` produces nine entries in that order, each with its own start/end timestamps and actual duration.
+Every slide visit and every completed break is recorded as an ordered event in one timeline. Going `1 → 2 → 3 → 2 → 1 → 6 → 1 → 2 → 3` with a 15-minute break partway through produces ten entries in chronological order, each with its own start/end timestamps and actual duration.
 
 Slide titles are resolved from:
 
@@ -148,12 +148,14 @@ Slide titles are resolved from:
 
 The trace is exported via **Export trace** under "Presentation trace" in the settings dialog. The JSON contains:
 
-- `slideTrace`: the ordered visit log. Each entry: `{ visitNumber, slideNumber, title, segmentIndex, segmentLabel, plannedMinutes, actualSeconds, startedAt, endedAt, presented }`
-- `slideData`: per-slide aggregate (sum of all visits to each slide), with variance and status
-- `skippedSlides`: slides the deck contains but the trace never visited
-- `summary`: totals and averages across visited slides
+- `trace`: the ordered timeline. Each entry has a `kind: 'slide' | 'break'` discriminator and common timing fields (`startedAt`, `endedAt`, `plannedMinutes`, `actualSeconds`, `segmentIndex`, `segmentLabel`):
+  - Slide entries also carry `slideNumber`, `title`, and a `presented` flag.
+  - Break entries also carry `breakId`, `scheduledStartTime`, and `wasScheduled` (false for on-demand "Break Now" entries).
+- `slideData`: per-slide aggregate (sum of all visits to each slide), with variance and status. Breaks aren't in this aggregate.
+- `skippedSlides`: slides the deck contains but the trace never visited.
+- `summary`: totals and averages across visited slides.
 
-The `presented` flag on each visit is `true` when its duration meets the **`presentationThresholdSeconds`** config (default `5`). Pre-threshold visits are still recorded in the trace, just flagged as not "presented" so downstream analysis can filter them.
+The `presented` flag on each slide visit is `true` when its duration meets the **`presentationThresholdSeconds`** config (default `5`). Pre-threshold visits are still recorded, just flagged as not "presented" so downstream analysis can filter them.
 
 ## Configs
 
