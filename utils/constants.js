@@ -9,11 +9,21 @@ const STORAGE_PREFIX = 'slidev-pacer-'
 export const STORAGE_KEYS = {
   PRESENTATION_STARTS: `${STORAGE_PREFIX}presentation-starts`,
   TARGET_COMPLETIONS: `${STORAGE_PREFIX}target-completions`,
-  SLIDE_TIMES: `${STORAGE_PREFIX}slide-times`,
+  // Per-segment ordered visit log. Each entry is one continuous block of
+  // time the presenter spent on a slide (a slide visited multiple times,
+  // or a slide interrupted by a break, produces multiple entries).
+  //   { "<segIdx>": [{ id, slideNumber, title, startedAt, endedAt,
+  //                    plannedMinutes, segmentIndex, segmentLabel }, ...] }
+  SLIDE_VISITS: `${STORAGE_PREFIX}slide-visits`,
   // Per-segment break lists, stored as JSON:
   //   { "<segIdx>": [{ id, startTime: <ms>, durationMinutes: <num> }, ...] }
   BREAKS: `${STORAGE_PREFIX}breaks`,
 }
+
+// A visit must last at least this many seconds to be counted as
+// "presented" in the saved artifact. Override per-deck via
+// pacer.presentationThresholdSeconds in the deck frontmatter.
+export const DEFAULT_PRESENTED_THRESHOLD_SECONDS = 5
 
 export const EVENTS = {
   OPEN_SETTINGS: 'pacer-open-settings',
@@ -163,4 +173,94 @@ export function writeSegmentBreaks(segmentIndex, breaks) {
 export function newBreakId() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
   return `break-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+// Read the ordered visit log for a segment. Returns an array (possibly
+// empty), in append order.
+export function readSegmentVisits(segmentIndex) {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.SLIDE_VISITS)
+    if (!raw) return []
+    const map = JSON.parse(raw)
+    return map[String(segmentIndex)] ?? []
+  } catch {
+    return []
+  }
+}
+
+// Read every segment's visit log, flattened in segment-then-append order.
+// Used by the export and by reactive consumers that need everything.
+export function readAllVisits() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.SLIDE_VISITS)
+    if (!raw) return []
+    const map = JSON.parse(raw)
+    const out = []
+    Object.keys(map)
+      .map(k => Number(k))
+      .sort((a, b) => a - b)
+      .forEach(segIdx => {
+        for (const v of map[String(segIdx)] ?? []) out.push(v)
+      })
+    return out
+  } catch {
+    return []
+  }
+}
+
+// Replace the visit log for a segment, then fire SETTINGS_UPDATED.
+export function writeSegmentVisits(segmentIndex, visits) {
+  let map = {}
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.SLIDE_VISITS)
+    if (raw) map = JSON.parse(raw)
+  } catch {
+    map = {}
+  }
+  const segKey = String(segmentIndex)
+  if (!visits || visits.length === 0) {
+    delete map[segKey]
+  } else {
+    map[segKey] = visits
+  }
+  if (Object.keys(map).length === 0) {
+    localStorage.removeItem(STORAGE_KEYS.SLIDE_VISITS)
+  } else {
+    localStorage.setItem(STORAGE_KEYS.SLIDE_VISITS, JSON.stringify(map))
+  }
+  window.dispatchEvent(new CustomEvent(EVENTS.SETTINGS_UPDATED, {
+    detail: { key: STORAGE_KEYS.SLIDE_VISITS, segmentIndex },
+  }))
+}
+
+// Append one visit entry to a segment's log, then fire SETTINGS_UPDATED.
+export function appendSegmentVisit(segmentIndex, visit) {
+  const current = readSegmentVisits(segmentIndex)
+  writeSegmentVisits(segmentIndex, [...current, visit])
+}
+
+export function newVisitId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
+  return `visit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+// Pick the best human-readable title for a slide. Prefers an explicit
+// frontmatter `title:`, then Slidev's own `title` field if exposed, then
+// the first markdown heading in the slide's content, then "Slide N".
+export function getSlideTitle(slide, slideNumber) {
+  const meta = slide?.meta?.slide
+  if (!meta) return `Slide ${slideNumber}`
+
+  const fmTitle = meta.frontmatter?.title
+  if (typeof fmTitle === 'string' && fmTitle.trim() !== '') return fmTitle.trim()
+
+  if (typeof meta.title === 'string' && meta.title.trim() !== '') return meta.title.trim()
+
+  const content = meta.content ?? meta.raw ?? ''
+  if (typeof content === 'string' && content.length > 0) {
+    const match = content.match(/^\s*#{1,6}\s+(.+?)\s*$/m)
+    if (match) return match[1].trim()
+  }
+
+  return `Slide ${slideNumber}`
 }

@@ -133,7 +133,27 @@ The tooltip spells out the same information in words.
 
 The settings dialog has an **Export** button that downloads a JSON file containing every segment's start time, target completion, and break list. Use this to save a known-good configuration between teaching sessions or to share it with another presenter. The **Import** button accepts the same JSON back via paste; importing replaces start/target/breaks for every segment in the file.
 
-This is separate from **Export slide times** (under "Slide timing data"), which dumps the recorded actual times per slide for post-session analysis.
+This is separate from the **presentation trace** (below), which captures what actually happened during the run.
+
+### Presentation trace
+
+Every slide visit is recorded as an ordered event log: each time the presenter lands on a slide, an entry opens; each time they leave it (or a break is raised), the entry closes with its `endedAt` timestamp. Going `1 → 2 → 3 → 2 → 1 → 6 → 1 → 2 → 3` produces nine entries in that order, each with its own start/end timestamps and actual duration.
+
+Slide titles are resolved from:
+
+1. The slide's `title:` frontmatter (Slidev's standard field)
+2. Slidev's computed title field, if exposed
+3. The first markdown heading in the slide's content
+4. `Slide N` as a final fallback
+
+The trace is exported via **Export trace** under "Presentation trace" in the settings dialog. The JSON contains:
+
+- `slideTrace`: the ordered visit log. Each entry: `{ visitNumber, slideNumber, title, segmentIndex, segmentLabel, plannedMinutes, actualSeconds, startedAt, endedAt, presented }`
+- `slideData`: per-slide aggregate (sum of all visits to each slide), with variance and status
+- `skippedSlides`: slides the deck contains but the trace never visited
+- `summary`: totals and averages across visited slides
+
+The `presented` flag on each visit is `true` when its duration meets the **`presentationThresholdSeconds`** config (default `5`). Pre-threshold visits are still recorded in the trace, just flagged as not "presented" so downstream analysis can filter them.
 
 ## Configs
 
@@ -148,6 +168,7 @@ pacer:
   showSlideCountdown: false             # per-slide countdown on the rabbit (default: false)
   pauseSlideCountdownUntilStart: true   # pause slide countdown until start in wall-clock mode (default: true)
   use12HourFormat: false                # 12-hour AM/PM time format (default: false)
+  presentationThresholdSeconds: 5       # min visit seconds to mark as "presented" in trace (default: 5)
   debug: false                          # console debug logging (default: false)
 ---
 ```
