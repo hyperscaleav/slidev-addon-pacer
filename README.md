@@ -118,15 +118,22 @@ If a break runs over, the overrun shows up in the banking math the moment it's d
 
 ### Activity timer
 
-Sometimes you want to put a countdown on the screen for an in-room activity ("you have 10 minutes for this exercise") without it being a break. The activity timer is on-demand and **does not touch the pacing math**: the slide clock keeps running, banking and ETA are untouched. It is purely a visible countdown.
+Sometimes you want to put a countdown on the screen for an in-room activity ("you have 10 minutes for this exercise") without it being a break. The activity timer is on-demand and **does not touch the pacing math**: the slide clock keeps running, banking and ETA are untouched. It is purely a visible countdown drawn over your slides.
 
-Click the **Activity** chip in the presenter nav bar and pick a duration (5/10/15/20/30 min). The overlay raises immediately, on both the presenter and audience screens.
+Click the **Activity** chip in the presenter nav bar, then either type a duration (`12` for minutes, or `12:30` for minutes:seconds) and press **Start**, or use a quick-pick (5/10/15/20/30 min). A small timer card appears over the slide, on both the presenter and audience screens.
+
+The timer is a floating widget, not a fullscreen overlay, so your slide stays visible behind it:
+- **Drag** it (from the presenter view) to place it anywhere over the slide. It moves on the audience screen too.
+- **Resize** it with the corner handle to scale it up or down. The size syncs to the audience screen as well.
+- The position and size are stored as a percentage of the screen, so a presenter laptop and a projector at different resolutions stay proportional.
 
 While an activity is running:
-- A fullscreen overlay shows on both screens with a "Done at H:MM" message and a live countdown.
+- The card shows a "done at H:MM" line and a live countdown.
 - The presenter nav chip shows the remaining time; click it to end the activity early.
 - When the countdown hits zero it counts up (so you can see how far over you are).
-- The presenter clicks **Done** (or presses Escape) to dismiss.
+- The presenter clicks the **✕** on the card (or presses Escape) to dismiss.
+
+The timer's digits use the presentation's own font (inherited, so it follows your theme and any UnoCSS web fonts) rather than a fixed family.
 
 The activity timer is ephemeral: it is not saved per segment, and a page refresh clears it.
 

@@ -62,6 +62,7 @@ import {
     readActivity,
     writeActivity,
     newActivityId,
+    DEFAULT_ACTIVITY_POS,
 } from '../utils/constants'
 
 const { PRESENTATION_STARTS, TARGET_COMPLETIONS, SLIDE_VISITS, BREAKS } = STORAGE_KEYS
@@ -427,6 +428,7 @@ const raiseActivity = (durationMinutes) => {
         id: newActivityId(),
         startedAt: Date.now(),
         durationMinutes,
+        ...DEFAULT_ACTIVITY_POS,
     }
     writeActivity(activity)
     activeActivity.value = activity
@@ -435,10 +437,6 @@ const raiseActivity = (durationMinutes) => {
 const dismissActivity = () => {
     writeActivity(null)
     activeActivity.value = null
-}
-
-const onDismissActivityKey = () => {
-    if (activeActivity.value) dismissActivity()
 }
 
 // Keep the nav chip in sync when the activity is started or dismissed from
@@ -506,7 +504,6 @@ onMounted(() => {
     loadAllSegmentVisits()
     window.addEventListener(EVENTS.SETTINGS_UPDATED, handleSettingsUpdated)
     window.addEventListener('pacer-break-dismiss-key', onDismissKey)
-    window.addEventListener('pacer-activity-dismiss-key', onDismissActivityKey)
     window.addEventListener(EVENTS.ACTIVITY_STATE_CHANGED, onActivityChanged)
     activeActivity.value = readActivity()
 
@@ -519,7 +516,6 @@ onUnmounted(() => {
     endCurrentVisit()
     window.removeEventListener(EVENTS.SETTINGS_UPDATED, handleSettingsUpdated)
     window.removeEventListener('pacer-break-dismiss-key', onDismissKey)
-    window.removeEventListener('pacer-activity-dismiss-key', onDismissActivityKey)
     window.removeEventListener(EVENTS.ACTIVITY_STATE_CHANGED, onActivityChanged)
     if (intervalId.value) {
         clearInterval(intervalId.value)

@@ -19,8 +19,14 @@
 
         <div v-if="open" class="activity-popover" ref="popoverRef">
             <div class="activity-popover-label">Activity timer:</div>
+            <form class="activity-custom" @submit.prevent="startCustom">
+                <input ref="inputRef" v-model="customInput" type="text" inputmode="numeric"
+                    class="activity-input" :class="{ invalid: showInvalid }" placeholder="12 or 12:30"
+                    aria-label="Custom duration (minutes or mm:ss)" @input="showInvalid = false" />
+                <button type="submit" class="activity-start">Start</button>
+            </form>
             <div class="activity-options">
-                <button v-for="d in durations" :key="d" class="activity-option" @click="pick(d)">
+                <button v-for="d in durations" :key="d" type="button" class="activity-option" @click="pick(d)">
                     {{ d }}m
                 </button>
             </div>
@@ -29,7 +35,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { parseDuration } from '../utils/constants'
 
 const props = defineProps({
     activityActive: {
@@ -51,19 +58,19 @@ const emit = defineEmits(['start-activity', 'dismiss-activity'])
 const open = ref(false)
 const triggerRef = ref(null)
 const popoverRef = ref(null)
+const inputRef = ref(null)
+const customInput = ref('')
+const showInvalid = ref(false)
 const durations = [5, 10, 15, 20, 30]
 
-const msRemaining = computed(() => {
-    if (!props.activityEndTime) return 0
-    return props.activityEndTime - props.currentTime
-})
+const msRemaining = computed(() => (props.activityEndTime ? props.activityEndTime - props.currentTime : 0))
 
 const chipText = computed(() => {
     if (!props.activityActive) return ''
-    const totalSeconds = Math.max(0, Math.floor(msRemaining.value / 1000))
+    if (msRemaining.value <= 0) return 'Done'
+    const totalSeconds = Math.floor(msRemaining.value / 1000)
     const minutes = Math.floor(totalSeconds / 60)
     const seconds = totalSeconds % 60
-    if (msRemaining.value <= 0) return 'Done'
     return `${minutes}:${seconds.toString().padStart(2, '0')}`
 })
 
@@ -74,13 +81,30 @@ const chipClass = computed(() => {
     return 'time-active'
 })
 
-const togglePopover = () => {
+const togglePopover = async () => {
     open.value = !open.value
+    if (open.value) {
+        showInvalid.value = false
+        await nextTick()
+        inputRef.value?.focus()
+    }
 }
 
-const pick = (durationMinutes) => {
-    emit('start-activity', durationMinutes)
+const start = (minutes) => {
+    emit('start-activity', minutes)
     open.value = false
+    customInput.value = ''
+}
+
+const pick = (durationMinutes) => start(durationMinutes)
+
+const startCustom = () => {
+    const minutes = parseDuration(customInput.value)
+    if (minutes == null) {
+        showInvalid.value = true
+        return
+    }
+    start(minutes)
 }
 
 const onDocClick = (e) => {
@@ -170,6 +194,47 @@ onUnmounted(() => {
     opacity: 0.7;
     margin-bottom: 6px;
     text-align: center;
+}
+
+.activity-custom {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 6px;
+}
+
+.activity-input {
+    width: 5.5rem;
+    padding: 4px 6px;
+    font-size: 0.75rem;
+    font-family: 'Courier New', monospace;
+    background: #111827;
+    color: #f9fafb;
+    border: 1px solid #4b5563;
+    border-radius: 4px;
+}
+
+.activity-input:focus {
+    outline: none;
+    border-color: #d97706;
+}
+
+.activity-input.invalid {
+    border-color: #ef4444;
+}
+
+.activity-start {
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: #d97706;
+    color: #fff;
+    border: 1px solid #d97706;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.activity-start:hover {
+    background: #b8650a;
 }
 
 .activity-options {

@@ -18,8 +18,12 @@ export const STORAGE_KEYS = {
   // Per-segment break lists, stored as JSON:
   //   { "<segIdx>": [{ id, startTime: <ms>, durationMinutes: <num> }, ...] }
   BREAKS: `${STORAGE_PREFIX}breaks`,
-  // Active activity timer (global, not per-segment):
-  //   { id, startedAt: <ms>, durationMinutes: <num> } or absent when idle
+  // Active activity timer (global, not per-segment). Position/scale are
+  // synced so dragging or resizing on the presenter view moves it on the
+  // audience view too. Coordinates are the widget CENTER as a percentage
+  // of the viewport, so different-resolution screens stay proportional.
+  //   { id, startedAt: <ms>, durationMinutes: <num>,
+  //     xPct: <0..100>, yPct: <0..100>, scale: <number> } or absent when idle
   ACTIVITY: `${STORAGE_PREFIX}activity`,
 }
 
@@ -297,4 +301,38 @@ export function writeActivity(activity) {
 export function newActivityId() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
   return `activity-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+// Default placement for a freshly-started activity timer: horizontally
+// centered, near the top, at unit scale.
+export const DEFAULT_ACTIVITY_POS = { xPct: 50, yPct: 22, scale: 1 }
+
+// Scale is clamped to this range while resizing.
+export const ACTIVITY_SCALE_MIN = 0.4
+export const ACTIVITY_SCALE_MAX = 6
+
+// Parse a free-text duration into minutes. Accepts:
+//   "12"      -> 12 minutes
+//   "12.5"    -> 12.5 minutes
+//   "12:30"   -> 12 minutes 30 seconds (12.5)
+//   "0:90" is rejected (seconds must be < 60).
+// Returns a positive number of minutes, or null if unparseable / <= 0.
+export function parseDuration(text) {
+  if (typeof text !== 'string') return null
+  const t = text.trim()
+  if (t === '') return null
+
+  const clock = t.match(/^(\d+):([0-5]?\d)$/)
+  if (clock) {
+    const minutes = parseInt(clock[1], 10) + parseInt(clock[2], 10) / 60
+    return minutes > 0 ? minutes : null
+  }
+
+  const decimal = t.match(/^\d+(?:\.\d+)?$/)
+  if (decimal) {
+    const minutes = parseFloat(t)
+    return minutes > 0 ? minutes : null
+  }
+
+  return null
 }
