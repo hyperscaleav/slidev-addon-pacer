@@ -104,15 +104,16 @@ While a break is upcoming:
 
 When a break is due:
 - The chip turns red and pulses.
-- Click it to raise the break overlay.
+- Click it to raise the break card.
 
-You can also click the **Break Now** chip to take an on-demand break (5/10/15/30/60 min quick-picks). The overlay raises immediately, no schedule entry needed.
+You can also click the **Break Now** chip to take an on-demand break: type a length (`15`, or `12:30` for minutes:seconds) and press **Start**, or use a quick-pick (5/10/15/30/60 min). It starts immediately, no schedule entry needed.
 
-While a break is active:
-- A fullscreen overlay shows on both the presenter and audience screens, with a "Back at H:MM" message and a live countdown.
+While a break is active, a break card shows on both the presenter and audience screens — the same draggable, resizable widget as the [activity timer](#activity-timer), so the slide stays visible behind it:
+- It shows "Back at H:MM" and a live countdown.
+- **Drag** it (from the presenter view) to reposition; **resize** it with the hover-revealed handle in the bottom-right corner. Position and size sync to the audience screen.
 - The slide elapsed-time counter pauses (so the slide you were on doesn't get charged for break minutes).
-- When the countdown hits zero, it goes red and counts up (overrun).
-- The presenter clicks the "Resume presentation" button (or presses Escape) to dismiss.
+- When the countdown hits zero it goes red and counts up (overrun).
+- The presenter clicks **Resume** on the card (or presses Escape) to dismiss.
 
 If a break runs over, the overrun shows up in the banking math the moment it's dismissed.
 

@@ -7,8 +7,14 @@
         </button>
         <div v-if="open" class="break-now-popover" ref="popoverRef">
             <div class="break-now-popover-label">Take a break for:</div>
+            <form class="break-now-custom" @submit.prevent="startCustom">
+                <input ref="inputRef" v-model="customInput" type="text" inputmode="numeric"
+                    class="break-now-input" :class="{ invalid: showInvalid }" placeholder="15 or 12:30"
+                    aria-label="Custom break length (minutes or mm:ss)" @input="showInvalid = false" />
+                <button type="submit" class="break-now-start">Start</button>
+            </form>
             <div class="break-now-options">
-                <button v-for="d in durations" :key="d" class="break-now-option" @click="pick(d)">
+                <button v-for="d in durations" :key="d" type="button" class="break-now-option" @click="pick(d)">
                     {{ d < 60 ? `${d}m` : `${d / 60}h` }}
                 </button>
             </div>
@@ -17,7 +23,8 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, nextTick, onMounted, onUnmounted } from 'vue'
+import { parseDuration } from '../utils/constants'
 
 defineProps({
     breakActive: {
@@ -31,15 +38,35 @@ const emit = defineEmits(['break-now'])
 const open = ref(false)
 const triggerRef = ref(null)
 const popoverRef = ref(null)
+const inputRef = ref(null)
+const customInput = ref('')
+const showInvalid = ref(false)
 const durations = [5, 10, 15, 30, 60]
 
-const togglePopover = () => {
+const togglePopover = async () => {
     open.value = !open.value
+    if (open.value) {
+        showInvalid.value = false
+        await nextTick()
+        inputRef.value?.focus()
+    }
 }
 
-const pick = (durationMinutes) => {
+const start = (durationMinutes) => {
     emit('break-now', durationMinutes)
     open.value = false
+    customInput.value = ''
+}
+
+const pick = (durationMinutes) => start(durationMinutes)
+
+const startCustom = () => {
+    const minutes = parseDuration(customInput.value)
+    if (minutes == null) {
+        showInvalid.value = true
+        return
+    }
+    start(minutes)
 }
 
 // Click outside the popover closes it.
@@ -103,6 +130,49 @@ onUnmounted(() => {
     opacity: 0.7;
     margin-bottom: 6px;
     text-align: center;
+}
+
+.break-now-custom {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 6px;
+}
+
+.break-now-input {
+    flex: 1;
+    min-width: 0;
+    padding: 4px 6px;
+    font-size: 0.75rem;
+    font-family: 'Courier New', monospace;
+    background: #111827;
+    color: #f9fafb;
+    border: 1px solid #4b5563;
+    border-radius: 4px;
+}
+
+.break-now-input:focus {
+    outline: none;
+    border-color: #21cab9;
+}
+
+.break-now-input.invalid {
+    border-color: #ef4444;
+}
+
+.break-now-start {
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: #21cab9;
+    color: #080c16;
+    border: 1px solid #21cab9;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.break-now-start:hover {
+    background: #1ba99a;
+    border-color: #1ba99a;
 }
 
 .break-now-options {
