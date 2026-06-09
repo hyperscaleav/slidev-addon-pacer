@@ -124,14 +124,14 @@ Click the **Activity** chip in the presenter nav bar, then either type a duratio
 
 The timer is a floating widget, not a fullscreen overlay, so your slide stays visible behind it:
 - **Drag** it (from the presenter view) to place it anywhere over the slide. It moves on the audience screen too.
-- **Resize** it with the corner handle to scale it up or down. The size syncs to the audience screen as well.
+- **Resize** it with the handle in the bottom-right corner (it fades in on hover) to scale it up or down. The size syncs to the audience screen as well.
 - The position and size are stored as a percentage of the screen, so a presenter laptop and a projector at different resolutions stay proportional.
 
 While an activity is running:
 - The card shows a "done at H:MM" line and a live countdown.
 - The presenter nav chip shows the remaining time; click it to end the activity early.
 - When the countdown hits zero it counts up (so you can see how far over you are).
-- The presenter clicks the **✕** on the card (or presses Escape) to dismiss.
+- Dismiss it by pressing **Escape** or clicking the nav chip.
 
 The timer's digits use the presentation's own font (inherited, so it follows your theme and any UnoCSS web fonts) rather than a fixed family.
 

@@ -311,28 +311,31 @@ export const DEFAULT_ACTIVITY_POS = { xPct: 50, yPct: 22, scale: 1 }
 export const ACTIVITY_SCALE_MIN = 0.4
 export const ACTIVITY_SCALE_MAX = 6
 
+// An activity timer is for short in-room exercises; cap it at 24h so a
+// fat-fingered entry ("100000000") is rejected rather than rendering a
+// nonsensical countdown.
+const ACTIVITY_MAX_MINUTES = 24 * 60
+
 // Parse a free-text duration into minutes. Accepts:
 //   "12"      -> 12 minutes
 //   "12.5"    -> 12.5 minutes
 //   "12:30"   -> 12 minutes 30 seconds (12.5)
 //   "0:90" is rejected (seconds must be < 60).
-// Returns a positive number of minutes, or null if unparseable / <= 0.
+// Returns a number of minutes in (0, ACTIVITY_MAX_MINUTES], or null if
+// unparseable / out of range.
 export function parseDuration(text) {
   if (typeof text !== 'string') return null
   const t = text.trim()
   if (t === '') return null
 
+  let minutes = null
   const clock = t.match(/^(\d+):([0-5]?\d)$/)
   if (clock) {
-    const minutes = parseInt(clock[1], 10) + parseInt(clock[2], 10) / 60
-    return minutes > 0 ? minutes : null
+    minutes = parseInt(clock[1], 10) + parseInt(clock[2], 10) / 60
+  } else if (/^\d+(?:\.\d+)?$/.test(t)) {
+    minutes = parseFloat(t)
   }
 
-  const decimal = t.match(/^\d+(?:\.\d+)?$/)
-  if (decimal) {
-    const minutes = parseFloat(t)
-    return minutes > 0 ? minutes : null
-  }
-
-  return null
+  if (minutes == null || minutes <= 0 || minutes > ACTIVITY_MAX_MINUTES) return null
+  return minutes
 }

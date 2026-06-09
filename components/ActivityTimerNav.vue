@@ -67,7 +67,8 @@ const msRemaining = computed(() => (props.activityEndTime ? props.activityEndTim
 
 const chipText = computed(() => {
     if (!props.activityActive) return ''
-    if (msRemaining.value <= 0) return 'Done'
+    // Match the on-slide card: exactly 0 still reads 0:00; only past zero is "Done".
+    if (msRemaining.value < 0) return 'Done'
     const totalSeconds = Math.floor(msRemaining.value / 1000)
     const minutes = Math.floor(totalSeconds / 60)
     const seconds = totalSeconds % 60
@@ -76,7 +77,7 @@ const chipText = computed(() => {
 
 const chipClass = computed(() => {
     const minutesLeft = msRemaining.value / 60000
-    if (minutesLeft <= 0) return 'time-done'
+    if (minutesLeft < 0) return 'time-done'
     if (minutesLeft < 2) return 'time-warning'
     return 'time-active'
 })

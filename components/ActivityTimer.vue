@@ -52,9 +52,12 @@ const readPos = (a) => ({
     scale: a?.scale ?? DEFAULT_ACTIVITY_POS.scale,
 })
 
+// Every write produces a fresh object (spread on same-window, JSON.parse on
+// cross-window), so the top-level reference change already fires this; no
+// deep watch needed.
 watch(() => props.activeActivity, (a) => {
     if (a && !isInteracting.value) pos.value = readPos(a)
-}, { immediate: true, deep: true })
+}, { immediate: true })
 
 const cardStyle = computed(() => ({
     left: `${pos.value.xPct}%`,
