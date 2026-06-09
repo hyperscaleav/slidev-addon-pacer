@@ -303,25 +303,24 @@ export function newActivityId() {
   return `activity-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-// Default placement for a freshly-started activity timer: horizontally
-// centered, near the top, at unit scale.
-export const DEFAULT_ACTIVITY_POS = { xPct: 50, yPct: 22, scale: 1 }
+// Default placement for a freshly-shown timer card (activity or break):
+// horizontally centered, near the top, at unit scale.
+export const DEFAULT_TIMER_POS = { xPct: 50, yPct: 22, scale: 1 }
 
-// Scale is clamped to this range while resizing.
-export const ACTIVITY_SCALE_MIN = 0.4
-export const ACTIVITY_SCALE_MAX = 6
+// Card scale is clamped to this range while resizing.
+export const TIMER_SCALE_MIN = 0.4
+export const TIMER_SCALE_MAX = 6
 
-// An activity timer is for short in-room exercises; cap it at 24h so a
-// fat-fingered entry ("100000000") is rejected rather than rendering a
-// nonsensical countdown.
-const ACTIVITY_MAX_MINUTES = 24 * 60
+// Timers are for short in-room durations; cap at 24h so a fat-fingered entry
+// ("100000000") is rejected rather than rendering a nonsensical countdown.
+const MAX_DURATION_MINUTES = 24 * 60
 
 // Parse a free-text duration into minutes. Accepts:
 //   "12"      -> 12 minutes
 //   "12.5"    -> 12.5 minutes
 //   "12:30"   -> 12 minutes 30 seconds (12.5)
 //   "0:90" is rejected (seconds must be < 60).
-// Returns a number of minutes in (0, ACTIVITY_MAX_MINUTES], or null if
+// Returns a number of minutes in (0, MAX_DURATION_MINUTES], or null if
 // unparseable / out of range.
 export function parseDuration(text) {
   if (typeof text !== 'string') return null
@@ -336,6 +335,6 @@ export function parseDuration(text) {
     minutes = parseFloat(t)
   }
 
-  if (minutes == null || minutes <= 0 || minutes > ACTIVITY_MAX_MINUTES) return null
+  if (minutes == null || minutes <= 0 || minutes > MAX_DURATION_MINUTES) return null
   return minutes
 }

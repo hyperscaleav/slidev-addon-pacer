@@ -62,7 +62,7 @@ import {
     readActivity,
     writeActivity,
     newActivityId,
-    DEFAULT_ACTIVITY_POS,
+    DEFAULT_TIMER_POS,
 } from '../utils/constants'
 
 const { PRESENTATION_STARTS, TARGET_COMPLETIONS, SLIDE_VISITS, BREAKS } = STORAGE_KEYS
@@ -428,7 +428,7 @@ const raiseActivity = (durationMinutes) => {
         id: newActivityId(),
         startedAt: Date.now(),
         durationMinutes,
-        ...DEFAULT_ACTIVITY_POS,
+        ...DEFAULT_TIMER_POS,
     }
     writeActivity(activity)
     activeActivity.value = activity
