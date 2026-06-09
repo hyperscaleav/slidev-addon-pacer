@@ -15,13 +15,9 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import {
-    writeActivity,
-    DEFAULT_ACTIVITY_POS,
-    ACTIVITY_SCALE_MIN,
-    ACTIVITY_SCALE_MAX,
-} from '../utils/constants'
+import { computed, onMounted, onUnmounted } from 'vue'
+import { writeActivity } from '../utils/constants'
+import { useDraggableTimer } from '../utils/useDraggableTimer'
 
 const props = defineProps({
     activeActivity: {
@@ -39,32 +35,14 @@ const props = defineProps({
     },
 })
 
-// Local render position. Synced from the activity object whenever it
-// changes AND we are not the window currently dragging/resizing it (so a
-// presenter's live drag is never clobbered by its own echoed write, while
-// the audience window follows along).
-const pos = ref({ ...DEFAULT_ACTIVITY_POS })
-const isInteracting = ref(false)
-
-const readPos = (a) => ({
-    xPct: a?.xPct ?? DEFAULT_ACTIVITY_POS.xPct,
-    yPct: a?.yPct ?? DEFAULT_ACTIVITY_POS.yPct,
-    scale: a?.scale ?? DEFAULT_ACTIVITY_POS.scale,
+// Drag/resize and cross-window position sync. The persist writes the new
+// position back onto the activity object (a single global key), preserving
+// its timing fields.
+const { isInteracting, cardStyle, onCardPointerDown, onResizePointerDown } = useDraggableTimer({
+    active: () => props.activeActivity,
+    canControl: () => props.canControl,
+    persist: (pos) => writeActivity({ ...props.activeActivity, ...pos }),
 })
-
-// Every write produces a fresh object (spread on same-window, JSON.parse on
-// cross-window), so the top-level reference change already fires this; no
-// deep watch needed.
-watch(() => props.activeActivity, (a) => {
-    if (a && !isInteracting.value) pos.value = readPos(a)
-}, { immediate: true })
-
-const cardStyle = computed(() => ({
-    left: `${pos.value.xPct}%`,
-    top: `${pos.value.yPct}%`,
-    // Center the widget on its coordinate and apply the synced scale.
-    transform: `translate(-50%, -50%) scale(${pos.value.scale})`,
-}))
 
 const endTime = computed(() => {
     if (!props.activeActivity) return null
@@ -87,95 +65,6 @@ const formattedEndTime = computed(() => {
     return new Date(endTime.value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 })
 
-// --- Persisting position/scale (throttled during a gesture) ---------------
-
-let lastPersist = 0
-const persist = (final = false) => {
-    if (!props.activeActivity) return
-    // performance.now() (not the 1s-resolution currentTime tick) so the
-    // throttle actually paces sub-second drag updates to the other window.
-    const now = performance.now()
-    // ~30fps of cross-window updates is smooth without thrashing storage.
-    if (!final && now - lastPersist < 33) return
-    lastPersist = now
-    writeActivity({ ...props.activeActivity, ...pos.value })
-}
-
-// --- Drag -----------------------------------------------------------------
-
-let dragStart = null
-
-const onCardPointerDown = (e) => {
-    if (!props.canControl) return
-    // Ignore secondary buttons; close/resize handle their own pointerdown.
-    if (e.button !== 0) return
-    isInteracting.value = true
-    dragStart = {
-        px: e.clientX,
-        py: e.clientY,
-        xPct: pos.value.xPct,
-        yPct: pos.value.yPct,
-    }
-    window.addEventListener('pointermove', onDragMove)
-    window.addEventListener('pointerup', onDragUp)
-    // Don't let the slide advance on what is really a drag.
-    e.stopPropagation()
-}
-
-const onDragMove = (e) => {
-    if (!dragStart) return
-    const dxPct = ((e.clientX - dragStart.px) / window.innerWidth) * 100
-    const dyPct = ((e.clientY - dragStart.py) / window.innerHeight) * 100
-    pos.value = {
-        ...pos.value,
-        xPct: clamp(dragStart.xPct + dxPct, 3, 97),
-        yPct: clamp(dragStart.yPct + dyPct, 5, 95),
-    }
-    persist()
-}
-
-const onDragUp = () => {
-    dragStart = null
-    isInteracting.value = false
-    window.removeEventListener('pointermove', onDragMove)
-    window.removeEventListener('pointerup', onDragUp)
-    persist(true)
-}
-
-// --- Resize (uniform scale) -----------------------------------------------
-
-let resizeStart = null
-
-const onResizePointerDown = (e) => {
-    if (!props.canControl || e.button !== 0) return
-    isInteracting.value = true
-    resizeStart = { px: e.clientX, py: e.clientY, scale: pos.value.scale }
-    window.addEventListener('pointermove', onResizeMove)
-    window.addEventListener('pointerup', onResizeUp)
-    e.stopPropagation()
-}
-
-const onResizeMove = (e) => {
-    if (!resizeStart) return
-    // Average the x and y travel. ~220px of drag ≈ 1.0 of scale.
-    const delta = ((e.clientX - resizeStart.px) + (e.clientY - resizeStart.py)) / 2 / 220
-    pos.value = {
-        ...pos.value,
-        scale: clamp(resizeStart.scale + delta, ACTIVITY_SCALE_MIN, ACTIVITY_SCALE_MAX),
-    }
-    persist()
-}
-
-const onResizeUp = () => {
-    resizeStart = null
-    isInteracting.value = false
-    window.removeEventListener('pointermove', onResizeMove)
-    window.removeEventListener('pointerup', onResizeUp)
-    persist(true)
-}
-
-const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
-
 const dismiss = () => writeActivity(null)
 
 const onKeydown = (e) => {
@@ -186,13 +75,7 @@ const onKeydown = (e) => {
 }
 
 onMounted(() => window.addEventListener('keydown', onKeydown))
-onUnmounted(() => {
-    window.removeEventListener('keydown', onKeydown)
-    window.removeEventListener('pointermove', onDragMove)
-    window.removeEventListener('pointerup', onDragUp)
-    window.removeEventListener('pointermove', onResizeMove)
-    window.removeEventListener('pointerup', onResizeUp)
-})
+onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
 <style scoped>

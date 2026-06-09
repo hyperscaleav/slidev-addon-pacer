@@ -1,12 +1,14 @@
 <template>
-    <BreakOverlay :active-break="activeBreak" :current-time="currentTime" @dismiss="dismissActiveBreak" />
+    <BreakCard :active-break="activeBreak" :current-time="currentTime"
+        :can-control="$slidev.nav.isPresenter" @dismiss="dismissActiveBreak"
+        @update:pos="updateActiveBreakPos" />
     <ActivityTimer :active-activity="activeActivity" :current-time="currentTime"
         :can-control="$slidev.nav.isPresenter" />
 </template>
 
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import BreakOverlay from './components/BreakOverlay.vue'
+import BreakCard from './components/BreakCard.vue'
 import ActivityTimer from './components/ActivityTimer.vue'
 import {
     STORAGE_KEYS,
@@ -17,12 +19,12 @@ import {
     readActivity,
 } from './utils/constants'
 
-// The break overlay and the activity timer both render on BOTH presenter
-// and audience windows. TimerBar only mounts in presenter view, so these
-// live here and derive their own state from localStorage. Cross-window
-// sync rides on the browser's real `storage` event; same-window sync on
-// CustomEvents. The activity timer is draggable in the presenter window
-// (can-control) and mirrors position/size on the audience window.
+// The break card and the activity timer both render on BOTH presenter and
+// audience windows. TimerBar only mounts in presenter view, so these live
+// here and derive their own state from localStorage. Cross-window sync rides
+// on the browser's real `storage` event; same-window sync on CustomEvents.
+// Both cards are draggable in the presenter window (can-control) and mirror
+// position/size on the audience window.
 
 const currentTime = ref(Date.now())
 const tickId = ref(null)
@@ -55,6 +57,18 @@ const dismissActiveBreak = () => {
     if (!a) return
     const segBreaks = readSegmentBreaks(a.segmentIndex)
     const updated = segBreaks.map(b => b.id === a.id ? { ...b, dismissedAt: Date.now() } : b)
+    writeSegmentBreaks(a.segmentIndex, updated)
+    loadAllBreaks()
+}
+
+// Persist a dragged/resized break's position onto its entry. Only xPct/yPct/
+// scale change, so none of the break's timing fields (and thus none of the
+// banking/ETA math) are affected.
+const updateActiveBreakPos = (pos) => {
+    const a = activeBreak.value
+    if (!a) return
+    const segBreaks = readSegmentBreaks(a.segmentIndex)
+    const updated = segBreaks.map(b => b.id === a.id ? { ...b, ...pos } : b)
     writeSegmentBreaks(a.segmentIndex, updated)
     loadAllBreaks()
 }
