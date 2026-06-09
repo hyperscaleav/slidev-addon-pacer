@@ -203,7 +203,8 @@ onUnmounted(() => {
 }
 
 .activity-input {
-    width: 5.5rem;
+    flex: 1;
+    min-width: 0;
     padding: 4px 6px;
     font-size: 0.75rem;
     font-family: 'Courier New', monospace;
