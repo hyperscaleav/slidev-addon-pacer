@@ -441,6 +441,13 @@ const onDismissActivityKey = () => {
     if (activeActivity.value) dismissActivity()
 }
 
+// Keep the nav chip in sync when the activity is started or dismissed from
+// anywhere else (the overlay's Done button, another window). Without this
+// the chip keeps counting after the overlay is dismissed.
+const onActivityChanged = (event) => {
+    activeActivity.value = event.detail?.activity ?? null
+}
+
 const dismissBreak = () => {
     if (!activeBreak.value) return
     const activeId = activeBreak.value.id
@@ -500,6 +507,7 @@ onMounted(() => {
     window.addEventListener(EVENTS.SETTINGS_UPDATED, handleSettingsUpdated)
     window.addEventListener('pacer-break-dismiss-key', onDismissKey)
     window.addEventListener('pacer-activity-dismiss-key', onDismissActivityKey)
+    window.addEventListener(EVENTS.ACTIVITY_STATE_CHANGED, onActivityChanged)
     activeActivity.value = readActivity()
 
     intervalId.value = setInterval(() => {
@@ -512,6 +520,7 @@ onUnmounted(() => {
     window.removeEventListener(EVENTS.SETTINGS_UPDATED, handleSettingsUpdated)
     window.removeEventListener('pacer-break-dismiss-key', onDismissKey)
     window.removeEventListener('pacer-activity-dismiss-key', onDismissActivityKey)
+    window.removeEventListener(EVENTS.ACTIVITY_STATE_CHANGED, onActivityChanged)
     if (intervalId.value) {
         clearInterval(intervalId.value)
     }
