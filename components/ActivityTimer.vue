@@ -4,16 +4,13 @@
         <div class="activity-timer-time" :class="{ expired: isExpired }">{{ formattedCountdown }}</div>
         <div class="activity-timer-end">{{ isExpired ? "time's up" : `done at ${formattedEndTime}` }}</div>
 
-        <!-- Presenter-only affordances. The audience window mirrors position
-             and size but has no controls. -->
-        <template v-if="canControl">
-            <button class="activity-timer-close" title="End activity (Esc)" @pointerdown.stop @click.stop="dismiss">
-                <carbon-close class="activity-timer-close-icon" />
-            </button>
-            <div class="activity-timer-resize" title="Drag to resize" @pointerdown.stop="onResizePointerDown">
-                <carbon-drag-vertical class="activity-timer-resize-icon" />
-            </div>
-        </template>
+        <!-- Presenter-only resize handle, revealed on hover. The audience
+             window mirrors position and size but has no controls.
+             (Dismiss is the nav chip or Escape.) -->
+        <div v-if="canControl" class="activity-timer-resize" title="Drag to resize"
+            @pointerdown.stop="onResizePointerDown">
+            <mdi-resize-bottom-right class="activity-timer-resize-icon" />
+        </div>
     </div>
 </template>
 
@@ -250,48 +247,32 @@ onUnmounted(() => {
     font-variant-numeric: tabular-nums;
 }
 
-.activity-timer-close {
-    position: absolute;
-    top: -0.6rem;
-    right: -0.6rem;
-    width: 1.5rem;
-    height: 1.5rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    border: none;
-    border-radius: 50%;
-    background: #ef4444;
-    color: #fff;
-    cursor: pointer;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-}
-
-.activity-timer-close-icon {
-    width: 0.95rem;
-    height: 0.95rem;
-}
-
 .activity-timer-resize {
     position: absolute;
-    bottom: -0.5rem;
-    right: -0.5rem;
-    width: 1.3rem;
-    height: 1.3rem;
+    bottom: 3px;
+    right: 3px;
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 50%;
-    background: rgba(127, 127, 127, 0.5);
-    color: #fff;
+    padding: 2px;
+    color: inherit;
+    opacity: 0;
+    transition: opacity 0.15s ease;
     cursor: nwse-resize;
-    transform: rotate(45deg);
+}
+
+/* Reveal the resize affordance only on hover, and keep it subtle. */
+.activity-timer:hover .activity-timer-resize {
+    opacity: 0.4;
+}
+
+.activity-timer-resize:hover {
+    opacity: 0.8;
 }
 
 .activity-timer-resize-icon {
-    width: 0.85rem;
-    height: 0.85rem;
+    width: 0.9rem;
+    height: 0.9rem;
 }
 
 @keyframes activity-pulse {
