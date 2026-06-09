@@ -18,6 +18,13 @@ export const STORAGE_KEYS = {
   // Per-segment break lists, stored as JSON:
   //   { "<segIdx>": [{ id, startTime: <ms>, durationMinutes: <num> }, ...] }
   BREAKS: `${STORAGE_PREFIX}breaks`,
+  // Active activity timer (global, not per-segment). Position/scale are
+  // synced so dragging or resizing on the presenter view moves it on the
+  // audience view too. Coordinates are the widget CENTER as a percentage
+  // of the viewport, so different-resolution screens stay proportional.
+  //   { id, startedAt: <ms>, durationMinutes: <num>,
+  //     xPct: <0..100>, yPct: <0..100>, scale: <number> } or absent when idle
+  ACTIVITY: `${STORAGE_PREFIX}activity`,
 }
 
 // A visit must last at least this many seconds to be counted as
@@ -31,6 +38,9 @@ export const EVENTS = {
   // Fired when a presenter raises or dismisses a break overlay.
   // detail: { activeBreak: <break-object> | null }
   BREAK_STATE_CHANGED: 'pacer-break-state-changed',
+  // Fired when an activity timer is started or dismissed.
+  // detail: { activity: <activity-object> | null }
+  ACTIVITY_STATE_CHANGED: 'pacer-activity-state-changed',
 }
 
 // Browser `storage` events only fire in *other* tabs, so settings changes
@@ -263,4 +273,69 @@ export function getSlideTitle(slide, slideNumber) {
   }
 
   return `Slide ${slideNumber}`
+}
+
+// Read the active activity from localStorage.
+export function readActivity() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.ACTIVITY)
+    if (!raw) return null
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+// Write (or clear) the activity state, then fire ACTIVITY_STATE_CHANGED.
+export function writeActivity(activity) {
+  if (!activity) {
+    localStorage.removeItem(STORAGE_KEYS.ACTIVITY)
+  } else {
+    localStorage.setItem(STORAGE_KEYS.ACTIVITY, JSON.stringify(activity))
+  }
+  window.dispatchEvent(new CustomEvent(EVENTS.ACTIVITY_STATE_CHANGED, {
+    detail: { activity: activity ?? null },
+  }))
+}
+
+export function newActivityId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
+  return `activity-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+// Default placement for a freshly-started activity timer: horizontally
+// centered, near the top, at unit scale.
+export const DEFAULT_ACTIVITY_POS = { xPct: 50, yPct: 22, scale: 1 }
+
+// Scale is clamped to this range while resizing.
+export const ACTIVITY_SCALE_MIN = 0.4
+export const ACTIVITY_SCALE_MAX = 6
+
+// An activity timer is for short in-room exercises; cap it at 24h so a
+// fat-fingered entry ("100000000") is rejected rather than rendering a
+// nonsensical countdown.
+const ACTIVITY_MAX_MINUTES = 24 * 60
+
+// Parse a free-text duration into minutes. Accepts:
+//   "12"      -> 12 minutes
+//   "12.5"    -> 12.5 minutes
+//   "12:30"   -> 12 minutes 30 seconds (12.5)
+//   "0:90" is rejected (seconds must be < 60).
+// Returns a number of minutes in (0, ACTIVITY_MAX_MINUTES], or null if
+// unparseable / out of range.
+export function parseDuration(text) {
+  if (typeof text !== 'string') return null
+  const t = text.trim()
+  if (t === '') return null
+
+  let minutes = null
+  const clock = t.match(/^(\d+):([0-5]?\d)$/)
+  if (clock) {
+    minutes = parseInt(clock[1], 10) + parseInt(clock[2], 10) / 60
+  } else if (/^\d+(?:\.\d+)?$/.test(t)) {
+    minutes = parseFloat(t)
+  }
+
+  if (minutes == null || minutes <= 0 || minutes > ACTIVITY_MAX_MINUTES) return null
+  return minutes
 }
