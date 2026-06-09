@@ -27,6 +27,10 @@
 
         <BreakNowNav :break-active="!!activeBreak" @break-now="raiseBreakNow" />
 
+        <ActivityTimerNav :activity-active="!!activeActivity" :current-time="currentTime"
+            :activity-end-time="activityEndTime" @start-activity="raiseActivity"
+            @dismiss-activity="dismissActivity" />
+
         <div class="w-1px opacity-10 bg-current m-1 lg:m-2"></div>
     </div>
 </template>
@@ -40,6 +44,7 @@ import EstimatedEndTimeNav from './EstimatedEndTimeNav.vue'
 import TargetCompletionTime from './TargetCompletionTime.vue'
 import BreakTimerNav from './BreakTimerNav.vue'
 import BreakNowNav from './BreakNowNav.vue'
+import ActivityTimerNav from './ActivityTimerNav.vue'
 import {
     CONFIG_KEY,
     STORAGE_KEYS,
@@ -54,6 +59,9 @@ import {
     newBreakId,
     newVisitId,
     getSlideTitle,
+    readActivity,
+    writeActivity,
+    newActivityId,
 } from '../utils/constants'
 
 const { PRESENTATION_STARTS, TARGET_COMPLETIONS, SLIDE_VISITS, BREAKS } = STORAGE_KEYS
@@ -69,6 +77,7 @@ const segmentVisits = ref({})
 // segmentVisits + persisted via appendSegmentVisit.
 const currentVisit = ref(null)
 const segmentBreaks = ref([])
+const activeActivity = ref(null)
 
 const segments = computed(() => computeSegments($slidev.nav.slides))
 const currentSegment = computed(() => findSegmentForPage(segments.value, $slidev.nav.currentPage))
@@ -408,6 +417,30 @@ const raiseBreakNow = (durationMinutes) => {
     }))
 }
 
+const activityEndTime = computed(() => {
+    if (!activeActivity.value) return null
+    return activeActivity.value.startedAt + activeActivity.value.durationMinutes * 60 * 1000
+})
+
+const raiseActivity = (durationMinutes) => {
+    const activity = {
+        id: newActivityId(),
+        startedAt: Date.now(),
+        durationMinutes,
+    }
+    writeActivity(activity)
+    activeActivity.value = activity
+}
+
+const dismissActivity = () => {
+    writeActivity(null)
+    activeActivity.value = null
+}
+
+const onDismissActivityKey = () => {
+    if (activeActivity.value) dismissActivity()
+}
+
 const dismissBreak = () => {
     if (!activeBreak.value) return
     const activeId = activeBreak.value.id
@@ -466,6 +499,8 @@ onMounted(() => {
     loadAllSegmentVisits()
     window.addEventListener(EVENTS.SETTINGS_UPDATED, handleSettingsUpdated)
     window.addEventListener('pacer-break-dismiss-key', onDismissKey)
+    window.addEventListener('pacer-activity-dismiss-key', onDismissActivityKey)
+    activeActivity.value = readActivity()
 
     intervalId.value = setInterval(() => {
         currentTime.value = Date.now()
@@ -476,6 +511,7 @@ onUnmounted(() => {
     endCurrentVisit()
     window.removeEventListener(EVENTS.SETTINGS_UPDATED, handleSettingsUpdated)
     window.removeEventListener('pacer-break-dismiss-key', onDismissKey)
+    window.removeEventListener('pacer-activity-dismiss-key', onDismissActivityKey)
     if (intervalId.value) {
         clearInterval(intervalId.value)
     }

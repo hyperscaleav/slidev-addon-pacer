@@ -18,6 +18,9 @@ export const STORAGE_KEYS = {
   // Per-segment break lists, stored as JSON:
   //   { "<segIdx>": [{ id, startTime: <ms>, durationMinutes: <num> }, ...] }
   BREAKS: `${STORAGE_PREFIX}breaks`,
+  // Active activity timer (global, not per-segment):
+  //   { id, startedAt: <ms>, durationMinutes: <num> } or absent when idle
+  ACTIVITY: `${STORAGE_PREFIX}activity`,
 }
 
 // A visit must last at least this many seconds to be counted as
@@ -31,6 +34,9 @@ export const EVENTS = {
   // Fired when a presenter raises or dismisses a break overlay.
   // detail: { activeBreak: <break-object> | null }
   BREAK_STATE_CHANGED: 'pacer-break-state-changed',
+  // Fired when an activity timer is started or dismissed.
+  // detail: { activity: <activity-object> | null }
+  ACTIVITY_STATE_CHANGED: 'pacer-activity-state-changed',
 }
 
 // Browser `storage` events only fire in *other* tabs, so settings changes
@@ -263,4 +269,32 @@ export function getSlideTitle(slide, slideNumber) {
   }
 
   return `Slide ${slideNumber}`
+}
+
+// Read the active activity from localStorage.
+export function readActivity() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.ACTIVITY)
+    if (!raw) return null
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+// Write (or clear) the activity state, then fire ACTIVITY_STATE_CHANGED.
+export function writeActivity(activity) {
+  if (!activity) {
+    localStorage.removeItem(STORAGE_KEYS.ACTIVITY)
+  } else {
+    localStorage.setItem(STORAGE_KEYS.ACTIVITY, JSON.stringify(activity))
+  }
+  window.dispatchEvent(new CustomEvent(EVENTS.ACTIVITY_STATE_CHANGED, {
+    detail: { activity: activity ?? null },
+  }))
+}
+
+export function newActivityId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
+  return `activity-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }

@@ -116,6 +116,20 @@ While a break is active:
 
 If a break runs over, the overrun shows up in the banking math the moment it's dismissed.
 
+### Activity timer
+
+Sometimes you want to put a countdown on the screen for an in-room activity ("you have 10 minutes for this exercise") without it being a break. The activity timer is on-demand and **does not touch the pacing math**: the slide clock keeps running, banking and ETA are untouched. It is purely a visible countdown.
+
+Click the **Activity** chip in the presenter nav bar and pick a duration (5/10/15/20/30 min). The overlay raises immediately, on both the presenter and audience screens.
+
+While an activity is running:
+- A fullscreen overlay shows on both screens with a "Done at H:MM" message and a live countdown.
+- The presenter nav chip shows the remaining time; click it to end the activity early.
+- When the countdown hits zero it counts up (so you can see how far over you are).
+- The presenter clicks **Done** (or presses Escape) to dismiss.
+
+The activity timer is ephemeral: it is not saved per segment, and a page refresh clears it.
+
 ### Forecast chip colors
 
 The crystal-ball chip (estimated end time) uses color and a direction arrow to indicate pace relative to the target:
