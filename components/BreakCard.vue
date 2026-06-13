@@ -19,6 +19,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted } from 'vue'
 import { useDraggableTimer } from '../utils/useDraggableTimer'
+import { readBreakCardPos, writeBreakCardPos } from '../utils/constants'
 
 const props = defineProps({
     activeBreak: {
@@ -38,13 +39,28 @@ const props = defineProps({
 
 const emit = defineEmits(['dismiss', 'update:pos'])
 
-// Drag/resize + cross-window position sync. Persist emits the new position
-// up to the parent, which merges it into the break's entry (breaks live in a
-// per-segment list, so the merge happens there, not on a single global key).
+// The break card defaults to (and remembers) the TOP-RIGHT corner via a global
+// localStorage key, independent of any single break. When a break is raised it
+// carries no position fields, so we fall back to the persisted global pos; once
+// the presenter drags it, the break entry carries its own xPct/yPct/scale and
+// those win (and keep mirroring to the audience window via the break storage).
+const effectiveBreak = computed(() => {
+    const b = props.activeBreak
+    if (!b) return null
+    if (b.xPct != null && b.yPct != null) return b
+    return { ...readBreakCardPos(), ...b }
+})
+
+// Drag/resize + cross-window position sync. Persist writes to BOTH the global
+// break-card position (so the card returns here next break/reload) and the
+// break's own entry (so the audience window mirrors live drags via storage).
 const { isInteracting, cardStyle, onCardPointerDown, onResizePointerDown } = useDraggableTimer({
-    active: () => props.activeBreak,
+    active: () => effectiveBreak.value,
     canControl: () => props.canControl,
-    persist: (pos) => emit('update:pos', pos),
+    persist: (pos) => {
+        writeBreakCardPos(pos)
+        emit('update:pos', pos)
+    },
 })
 
 // Resume time = the moment the break ends: raisedAt + duration (falls back to

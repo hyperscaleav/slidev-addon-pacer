@@ -193,9 +193,37 @@ pacer:
   pauseSlideCountdownUntilStart: true   # pause slide countdown until start in wall-clock mode (default: true)
   use12HourFormat: false                # 12-hour AM/PM time format (default: false)
   presentationThresholdSeconds: 5       # min visit seconds to mark as "presented" in trace (default: 5)
+  breakScreen: /ic26-loop               # route shown fullscreen behind the timer during breaks (default: none)
   debug: false                          # console debug logging (default: false)
 ---
 ```
+
+### Break screen
+
+When `pacer.breakScreen` is set, raising a break shows that route fullscreen
+behind the break countdown card. Point it at a slide route — typically a
+`routeAlias` on a dedicated break slide (e.g. a looping image carousel):
+
+```yaml
+# pages/break-loop.md
+---
+routeAlias: ic26-loop
+---
+<SlideLoop :images="[...]" />
+```
+
+```yaml
+# slides.md headmatter
+pacer:
+  breakScreen: /ic26-loop
+```
+
+The backdrop is an iframe of that route, so its components keep their own
+lifecycle (auto-advancing carousels keep running) and it is independent of the
+presenter's slide navigation: the presenter can move through the deck freely
+while the audience sees the break screen plus the corner countdown. The break
+card defaults to the top-right corner and remembers its dragged position across
+breaks and reloads. Absent `breakScreen`, break behaviour is unchanged.
 
 ## License
 

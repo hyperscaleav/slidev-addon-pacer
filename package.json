@@ -11,9 +11,9 @@
   ],
   "scripts": {
     "dev": "slidev ./example/slides.md --remote 0.0.0.0",
-    "build": "slidev build example.md",
-    "export": "slidev export example.md",
-    "screenshot": "slidev export example.md --format png",
+    "build": "slidev build ./example/slides.md",
+    "export": "slidev export ./example/slides.md",
+    "screenshot": "slidev export ./example/slides.md --format png",
     "test": "echo there is no test."
   },
   "repository": {

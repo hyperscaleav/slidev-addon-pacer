@@ -25,6 +25,10 @@ export const STORAGE_KEYS = {
   //   { id, startedAt: <ms>, durationMinutes: <num>,
   //     xPct: <0..100>, yPct: <0..100>, scale: <number> } or absent when idle
   ACTIVITY: `${STORAGE_PREFIX}activity`,
+  // Last-used break-card position/scale (global, not per-break), so the card
+  // returns to where the presenter left it across breaks and reloads.
+  //   { xPct, yPct, scale }
+  BREAK_CARD_POS: `${STORAGE_PREFIX}break-card-pos`,
 }
 
 // A visit must last at least this many seconds to be counted as
@@ -306,6 +310,36 @@ export function newActivityId() {
 // Default placement for a freshly-shown timer card (activity or break):
 // horizontally centered, near the top, at unit scale.
 export const DEFAULT_TIMER_POS = { xPct: 50, yPct: 22, scale: 1 }
+
+// The break card defaults to the TOP-RIGHT corner (over the fullscreen break
+// backdrop), unlike the centered activity timer. xPct/yPct are clamped by the
+// drag composable to (3..97, 5..95).
+export const DEFAULT_BREAK_TIMER_POS = { xPct: 90, yPct: 10, scale: 1 }
+
+// Read the last-used break-card position. Falls back to the top-right default
+// so a brand-new break (or a fresh reload) lands in the corner, not centered.
+export function readBreakCardPos() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.BREAK_CARD_POS)
+    if (!raw) return { ...DEFAULT_BREAK_TIMER_POS }
+    return { ...DEFAULT_BREAK_TIMER_POS, ...JSON.parse(raw) }
+  } catch {
+    return { ...DEFAULT_BREAK_TIMER_POS }
+  }
+}
+
+// Persist the break-card position globally, then fire SETTINGS_UPDATED so the
+// other window (audience/presenter) can mirror it.
+export function writeBreakCardPos(pos) {
+  try {
+    localStorage.setItem(STORAGE_KEYS.BREAK_CARD_POS, JSON.stringify(pos))
+  } catch {
+    /* storage full or unavailable: position simply won't persist */
+  }
+  window.dispatchEvent(new CustomEvent(EVENTS.SETTINGS_UPDATED, {
+    detail: { key: STORAGE_KEYS.BREAK_CARD_POS },
+  }))
+}
 
 // Card scale is clamped to this range while resizing.
 export const TIMER_SCALE_MIN = 0.4

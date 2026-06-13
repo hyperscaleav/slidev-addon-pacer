@@ -1,4 +1,5 @@
 <template>
+    <BreakBackdrop :active-break="activeBreak" />
     <BreakCard :active-break="activeBreak" :current-time="currentTime"
         :can-control="$slidev.nav.isPresenter" @dismiss="dismissActiveBreak"
         @update:pos="updateActiveBreakPos" />
@@ -9,6 +10,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import BreakCard from './components/BreakCard.vue'
+import BreakBackdrop from './components/BreakBackdrop.vue'
 import ActivityTimer from './components/ActivityTimer.vue'
 import {
     STORAGE_KEYS,

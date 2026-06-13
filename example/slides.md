@@ -13,6 +13,7 @@ pacer:
   showSlideCountdown: true
   pauseSlideCountdownUntilStart: true
   use12HourFormat: true
+  breakScreen: /pacer-break-demo
 pacerBoundary: Day 1
 slideTime: 0.5
 ---
@@ -34,7 +35,8 @@ slideTime: 1
 
 - **Per-day segments**: this deck is split into three by `pacerBoundary` markers
 - **Banking, ETA, target completion**: scoped per segment
-- **Breaks**: wall-clock anchored, configured at runtime, raised as a fullscreen overlay
+- **Breaks**: wall-clock anchored, configured at runtime; raise a fullscreen break screen with a draggable corner countdown
+- **Break screen**: point `pacer.breakScreen` at any route; it fills the audience view while you keep navigating the deck
 - **Slide-time pacing**: the rabbit (your slide) racing the turtle (your elapsed time)
 
 The presenter view's bottom nav bar has the pacer chips. Hover any of them for tooltips; click any of them to open settings.
@@ -121,17 +123,18 @@ title: Testing the break overlay
 slideTime: 2
 ---
 
-# Testing the break overlay
+# Testing the break screen
 
 When you raise a break:
 
-- A fullscreen overlay appears on **both** the presenter window and the audience window
-- A live countdown ticks down to "Back at H:MM"
+- The configured **break screen** (`pacer.breakScreen`, here `/pacer-break-demo`) fills the audience view as a fullscreen backdrop
+- A **countdown timer** rides in the corner — starts top-right, **drag it** anywhere on the presenter view; the audience mirrors it and it **remembers** its spot across breaks and reloads
+- The break screen runs in its own iframe, so you can **navigate the deck freely** behind it — advance slides, jump around; the backdrop stays put
 - The slide elapsed-time counter **pauses** (the slide you were on isn't charged for break minutes)
 - After the countdown hits zero, it goes red and **counts up** as overrun
 - Click **Resume presentation** (or press <kbd>Esc</kbd>) to dismiss
 
-To verify the audience overlay: open `http://localhost:3030/` in one window and `http://localhost:3030/presenter` in another. Raise the break from the presenter window; the overlay shows in both.
+To verify: open `http://localhost:3030/` in one window and `http://localhost:3030/presenter` in another. Raise the break from the presenter window; the break screen + corner timer show in both. With no `breakScreen` set, you get the old plain overlay instead.
 
 ---
 title: Done
@@ -141,3 +144,75 @@ slideTime: 0.5
 # That's the demo
 
 Check the README for the full config reference and the `pacerBoundary` frontmatter contract.
+
+---
+layout: center
+class: '!p-0'
+hideInToc: true
+clicks: 0
+routeAlias: pacer-break-demo
+---
+
+<div class="break-demo">
+  <div class="break-demo-orb"></div>
+  <div class="break-demo-text">
+    <div class="break-demo-kicker">BREAK</div>
+    <div class="break-demo-sub">back shortly</div>
+    <div class="break-demo-clock">{{ tick }}</div>
+  </div>
+</div>
+
+<script setup>
+import { ref, onMounted, onUnmounted } from 'vue'
+// Live tick proves the break screen runs its own lifecycle in the iframe:
+// it keeps counting while the presenter navigates the deck behind it.
+const tick = ref(0)
+let t = null
+onMounted(() => { t = setInterval(() => { tick.value++ }, 1000) })
+onUnmounted(() => { if (t) clearInterval(t) })
+</script>
+
+<style scoped>
+.break-demo {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 40%, #1e293b, #020617 70%);
+  overflow: hidden;
+}
+.break-demo-orb {
+  position: absolute;
+  width: 60vmin;
+  height: 60vmin;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(56,189,248,0.45), transparent 65%);
+  animation: break-pulse 3.2s ease-in-out infinite;
+}
+@keyframes break-pulse {
+  0%, 100% { transform: scale(0.85); opacity: 0.55; }
+  50%      { transform: scale(1.15); opacity: 1; }
+}
+.break-demo-text {
+  position: relative;
+  text-align: center;
+  color: #e2e8f0;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+.break-demo-kicker { font-size: 14vmin; font-weight: 800; letter-spacing: 0.15em; }
+.break-demo-sub { font-size: 4vmin; opacity: 0.7; margin-top: 0.2em; }
+.break-demo-clock {
+  margin-top: 1em;
+  font-size: 3vmin;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.6;
+}
+</style>
+
+<!--
+This is the demo break screen. `pacer.breakScreen: /pacer-break-demo` in the deck
+headmatter points at this slide's routeAlias. Raise a break and it fills the audience
+view behind the corner countdown. The live tick counter proves the iframe keeps its
+own lifecycle while you navigate the deck behind it.
+-->
