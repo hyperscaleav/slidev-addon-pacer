@@ -1,5 +1,5 @@
 <template>
-    <BreakBackdrop :active-break="activeBreak" />
+    <BreakBackdrop :active-break="activeBreak" :current-time="currentTime" />
     <BreakCard :active-break="activeBreak" :current-time="currentTime"
         :can-control="$slidev.nav.isPresenter" @dismiss="dismissActiveBreak"
         @update:pos="updateActiveBreakPos" />

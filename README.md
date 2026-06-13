@@ -193,37 +193,39 @@ pacer:
   pauseSlideCountdownUntilStart: true   # pause slide countdown until start in wall-clock mode (default: true)
   use12HourFormat: false                # 12-hour AM/PM time format (default: false)
   presentationThresholdSeconds: 5       # min visit seconds to mark as "presented" in trace (default: 5)
-  breakScreen: /ic26-loop               # route shown fullscreen behind the timer during breaks (default: none)
+  breakComponent: SlideLoop             # global component mounted fullscreen during breaks (default: none)
+  breakProps: { interval: 6000 }        # props spread onto breakComponent (default: {})
   debug: false                          # console debug logging (default: false)
 ---
 ```
 
 ### Break screen
 
-When `pacer.breakScreen` is set, raising a break shows that route fullscreen
-behind the break countdown card. Point it at a slide route — typically a
-`routeAlias` on a dedicated break slide (e.g. a looping image carousel):
+When `pacer.breakComponent` names a globally-registered component, raising a
+break mounts it fullscreen behind the break countdown card. Slidev auto-registers
+every `*.vue` in the deck's `components/` directory as a global component, so
+just give the component name (e.g. a looping image carousel):
 
-```yaml
-# pages/break-loop.md
----
-routeAlias: ic26-loop
----
-<SlideLoop :images="[...]" />
+```vue
+<!-- components/SlideLoop.vue — a fullscreen image carousel -->
 ```
 
 ```yaml
 # slides.md headmatter
 pacer:
-  breakScreen: /ic26-loop
+  breakComponent: SlideLoop
+  breakProps:
+    interval: 6000
+    images: [/loop/1.png, /loop/2.png]
 ```
 
-The backdrop is an iframe of that route, so its components keep their own
-lifecycle (auto-advancing carousels keep running) and it is independent of the
-presenter's slide navigation: the presenter can move through the deck freely
-while the audience sees the break screen plus the corner countdown. The break
-card defaults to the top-right corner and remembers its dragged position across
-breaks and reloads. Absent `breakScreen`, break behaviour is unchanged.
+The component is mounted in the same Vue app (no iframe, no route load), so it
+appears instantly and keeps its own lifecycle: auto-advancing carousels keep
+running while the presenter moves through the deck freely behind it. The break
+state mirrors to every window via the browser `storage` event, so the audience
+sees the break screen plus the corner countdown card. That card defaults to the
+top-right corner and remembers its dragged position across breaks and reloads.
+Absent `breakComponent`, raising a break shows a plain countdown overlay.
 
 ## License
 
